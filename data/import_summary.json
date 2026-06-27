@@ -1,0 +1,73 @@
+{
+  "elapsed_s": 40.102181911468506,
+  "layers": {
+    "layer4": {
+      "wiki_entries": 430000,
+      "new_seeds": 355722
+    }
+  },
+  "final": {
+    "nodes": 2236423,
+    "edges": 5514432,
+    "relations": {
+      "IS_A": 5238656,
+      "COOCCURS_WITH": 150615,
+      "CAUSE": 114961,
+      "PART_OF": 9480,
+      "RELATED": 720
+    },
+    "size_mb": 1501.28125
+  },
+  "verify": {
+    "感冒": {
+      "matched": "exact",
+      "def": "to catch cold; (common) cold; CL:場|场[chang2],次[ci4",
+      "domain": ""
+    },
+    "量子力学": {
+      "matched": "exact",
+      "def": "quantum mechanics",
+      "domain": ""
+    },
+    "龙飞凤舞": {
+      "matched": "exact",
+      "def": "flamboyant or bold cursive calligraphy (idiom)",
+      "domain": ""
+    },
+    "苏轼": {
+      "matched": "exact",
+      "def": "Su Shi (1037-1101), aka Su Dongpo 蘇東坡|苏东坡[Su1 Dong",
+      "domain": ""
+    },
+    "人工智能": {
+      "matched": "exact",
+      "def": "artificial intelligence (AI)",
+      "domain": ""
+    },
+    "光合作用": {
+      "matched": "exact",
+      "def": "photosynthesis",
+      "domain": ""
+    },
+    "非典": {
+      "matched": "exact",
+      "def": "atypical pneumonia; Severe Acute Respiratory Syndr",
+      "domain": ""
+    },
+    "牛顿": {
+      "matched": "exact",
+      "def": "newton (SI unit of force)",
+      "domain": ""
+    },
+    "中国历史": {
+      "matched": "exact",
+      "def": "",
+      "domain": ""
+    },
+    "电脑": {
+      "matched": "exact",
+      "def": "computer; CL:臺|台[tai2]",
+      "domain": ""
+    }
+  }
+}
