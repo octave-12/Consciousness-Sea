@@ -24,6 +24,9 @@ dev = [
     "mypy>=1.8.0",
     "ruff>=0.2.0",
 ]
+ollama = [
+    "httpx>=0.24",
+]
 
 [project.scripts]
 consciousness-sea = "cli:main"

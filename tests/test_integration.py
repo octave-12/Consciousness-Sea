@@ -11,6 +11,8 @@
 import sqlite3
 import sys
 import os
+import threading
+from unittest.mock import patch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -164,6 +166,8 @@ class TestEndToEnd:
         conn = _build_integration_db()
         cls._db = GraphDB(':memory:')
         cls._db.conn = conn
+        cls._db.ensure_phase2_tables()
+        cls._db.ensure_phase3_tables()
 
     @classmethod
     def teardown_class(cls):
@@ -380,6 +384,271 @@ class TestEndToEnd:
             pass
         finally:
             db.close()
+
+
+# ═══════════════════════════════════════════════════════════
+#  并发集成测试 (TASK-5.7)
+# ═══════════════════════════════════════════════════════════
+
+
+def _build_concurrent_test_db(db_path: str) -> None:
+    """创建并发测试用 SQLite 数据库文件"""
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    conn.executescript("""
+        CREATE TABLE seeds (
+            id TEXT PRIMARY KEY, label TEXT NOT NULL,
+            type TEXT NOT NULL DEFAULT 'CONCEPT',
+            aliases TEXT NOT NULL DEFAULT '[]',
+            activation REAL NOT NULL DEFAULT 0.0,
+            domain TEXT NOT NULL DEFAULT '',
+            definition TEXT NOT NULL DEFAULT '',
+            pinyin TEXT NOT NULL DEFAULT '',
+            activation_bias REAL NOT NULL DEFAULT 0.0,
+            meta TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE TABLE karma_edges (
+            source TEXT NOT NULL, target TEXT NOT NULL, relation TEXT NOT NULL,
+            weight REAL NOT NULL DEFAULT 0.5,
+            source_tag TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            PRIMARY KEY (source, target, relation)
+        );
+    """)
+    seeds = [
+        ('感冒', '感冒', 'CONCEPT', '[]', '医学', 'cold'),
+        ('发热', '发热', 'CONCEPT', '[]', '医学', 'fever'),
+        ('咳嗽', '咳嗽', 'CONCEPT', '[]', '医学', 'cough'),
+        ('量子力学', '量子力学', 'CONCEPT', '[]', '物理', 'quantum mechanics'),
+        ('薛定谔方程', '薛定谔方程', 'CONCEPT', '[]', '物理', 'Schrodinger equation'),
+        ('人工智能', '人工智能', 'CONCEPT', '["AI"]', '计算机', 'AI'),
+        ('深度学习', '深度学习', 'CONCEPT', '[]', '计算机', 'deep learning'),
+    ]
+    conn.executemany(
+        "INSERT INTO seeds (id, label, type, aliases, domain, definition) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        seeds,
+    )
+    edges = [
+        ('感冒', '发热', 'COOCCURS_WITH', 0.95),
+        ('感冒', '咳嗽', 'COOCCURS_WITH', 0.90),
+        ('量子力学', '薛定谔方程', 'RELATED', 0.88),
+        ('人工智能', '深度学习', 'IS_A', 0.90),
+    ]
+    conn.executemany(
+        "INSERT INTO karma_edges (source, target, relation, weight) "
+        "VALUES (?, ?, ?, ?)",
+        edges,
+    )
+    conn.commit()
+    conn.close()
+
+
+class TestConcurrentIntegration:
+    """并发集成测试 — 隔离性 + 原子性 + 用户种子预激活"""
+
+    @staticmethod
+    def _patched_connect(self, readonly: bool = False):
+        """Patched GraphDB.connect with check_same_thread=False for pool testing"""
+        uri = f'file:{self.db_path}?mode=ro' if readonly else self.db_path
+        self.conn = sqlite3.connect(uri, uri=readonly, check_same_thread=False)
+        if not readonly:
+            self.conn.execute("PRAGMA journal_mode=WAL")
+            self.conn.execute("PRAGMA synchronous=NORMAL")
+            self.conn.execute("PRAGMA busy_timeout=5000")
+            self.ensure_phase2_tables()
+            self.ensure_phase3_tables()
+        self.conn.row_factory = sqlite3.Row
+
+    def test_concurrent_queries_isolated(self, tmp_path):
+        """两个并发查询的 RippleResult 互不干扰
+
+        route() 每次调用创建新的 RippleResult 实例，
+        因此两个查询的结果天然隔离。
+        """
+        from core.connection_pool import ConnectionPool
+        from core.router import route
+
+        db_path = str(tmp_path / "concurrent_test.db")
+        _build_concurrent_test_db(db_path)
+
+        with patch.object(GraphDB, 'connect', self._patched_connect):
+            pool = ConnectionPool(db_path, pool_size=5)
+            try:
+                results = {}
+                errors = []
+
+                def query_medical():
+                    try:
+                        graph = pool.acquire()
+                        try:
+                            result = route('感冒', graph)
+                            results['medical'] = result
+                        finally:
+                            pool.release(graph)
+                    except Exception as e:
+                        errors.append(e)
+
+                def query_physics():
+                    try:
+                        graph = pool.acquire()
+                        try:
+                            result = route('量子力学', graph)
+                            results['physics'] = result
+                        finally:
+                            pool.release(graph)
+                    except Exception as e:
+                        errors.append(e)
+
+                t1 = threading.Thread(target=query_medical)
+                t2 = threading.Thread(target=query_physics)
+                t1.start()
+                t2.start()
+                t1.join(timeout=30)
+                t2.join(timeout=30)
+
+                assert len(errors) == 0, f"并发查询错误: {errors}"
+                assert 'medical' in results
+                assert 'physics' in results
+
+                # 验证结果互不干扰
+                med = results['medical']
+                phy = results['physics']
+
+                # 医学查询应包含感冒相关种子
+                med_labels = set(med.activated.keys())
+                assert '感冒' in med_labels or '发热' in med_labels
+
+                # 物理查询应包含量子力学相关种子
+                phy_labels = set(phy.activated.keys())
+                assert '量子力学' in phy_labels or '薛定谔方程' in phy_labels
+
+                # 两个结果的查询文本不同
+                assert med.query != phy.query
+            finally:
+                pool.close_all()
+
+    def test_concurrent_karma_write_no_lost_update(self, tmp_path):
+        """并发熏习写回不丢失更新
+
+        使用 adjust_karma_atomic() 原子操作，多个线程并发修改同一条边，
+        最终权重应反映所有修改（不丢失更新）。
+        """
+        from core.connection_pool import ConnectionPool
+        from core.config import KARMA_DELTA
+
+        db_path = str(tmp_path / "concurrent_karma.db")
+        _build_concurrent_test_db(db_path)
+
+        with patch.object(GraphDB, 'connect', self._patched_connect):
+            pool = ConnectionPool(db_path, pool_size=5)
+            try:
+                # 记录初始权重
+                graph = pool.acquire()
+                try:
+                    initial_edge = graph.get_edge('感冒', '发热', 'COOCCURS_WITH')
+                    initial_weight = initial_edge['weight'] if initial_edge else 0.95
+                finally:
+                    pool.release(graph)
+
+                # 并发执行 N 次正向熏习
+                n_threads = 5
+                errors = []
+
+                def karma_worker():
+                    try:
+                        g = pool.acquire()
+                        try:
+                            g.adjust_karma_atomic('感冒', '发热', 'COOCCURS_WITH', delta=KARMA_DELTA)
+                            g.conn.commit()
+                        finally:
+                            pool.release(g)
+                    except Exception as e:
+                        errors.append(e)
+
+                threads = [threading.Thread(target=karma_worker) for _ in range(n_threads)]
+                for t in threads:
+                    t.start()
+                for t in threads:
+                    t.join(timeout=30)
+
+                assert len(errors) == 0, f"并发熏习错误: {errors}"
+
+                # 验证最终权重
+                graph = pool.acquire()
+                try:
+                    final_edge = graph.get_edge('感冒', '发热', 'COOCCURS_WITH')
+                    final_weight = final_edge['weight'] if final_edge else initial_weight
+                    # 期望权重 = initial + n_threads * KARMA_DELTA
+                    expected_weight = initial_weight + n_threads * KARMA_DELTA
+                    # 由于原子操作，最终权重应接近期望值（允许 KARMA_MAX 裁剪）
+                    from core.config import KARMA_MAX
+                    expected_weight = min(expected_weight, KARMA_MAX)
+                    assert abs(final_weight - expected_weight) < 0.01, (
+                        f"权重不一致: 期望 {expected_weight:.4f}, 实际 {final_weight:.4f}"
+                    )
+                finally:
+                    pool.release(graph)
+            finally:
+                pool.close_all()
+
+    def test_user_seed_preactivation_bias(self, tmp_path):
+        """用户种子预激活使涟漪偏向用户关注领域
+
+        创建一个用户种子，为其添加到"量子力学"的业力边，
+        然后查询模糊词，验证涟漪偏向用户关注的物理领域。
+        """
+        from core.connection_pool import ConnectionPool
+        from core.user_manager import UserManager
+        from core.router import route
+        from core.config import USER_PREACTIVATION
+
+        db_path = str(tmp_path / "user_bias.db")
+        _build_concurrent_test_db(db_path)
+
+        with patch.object(GraphDB, 'connect', self._patched_connect):
+            pool = ConnectionPool(db_path, pool_size=3)
+            try:
+                user_mgr = UserManager(pool)
+
+                # 创建用户
+                user_label = user_mgr.resolve_user('wechat', 'physics_lover')
+                assert user_label is not None
+
+                # 为用户添加关注边：用户 → 量子力学
+                user_mgr.add_user_karma_edge(user_label, '量子力学', '关注', 0.9)
+
+                # 不带用户种子的查询
+                graph_no_user = pool.acquire()
+                try:
+                    result_no_user = route('方程', graph_no_user)
+                finally:
+                    pool.release(graph_no_user)
+
+                # 带用户种子的查询
+                graph_with_user = pool.acquire()
+                try:
+                    result_with_user = route('方程', graph_with_user, user_label=user_label)
+                finally:
+                    pool.release(graph_with_user)
+
+                # 带用户种子时，物理领域的激活值应更高
+                no_user_physics = result_no_user.domain_scores.get('物理', 0.0)
+                with_user_physics = result_with_user.domain_scores.get('物理', 0.0)
+
+                # 用户种子预激活了量子力学，物理领域激活值应增加
+                assert with_user_physics >= no_user_physics, (
+                    f"用户种子预激活未生效: 无用户物理={no_user_physics:.4f}, "
+                    f"有用户物理={with_user_physics:.4f}"
+                )
+
+                # 验证用户种子出现在激活节点中
+                assert user_label in result_with_user.activated, (
+                    "用户种子应出现在激活节点中"
+                )
+            finally:
+                pool.close_all()
 
 
 if __name__ == '__main__':

@@ -6,10 +6,16 @@
 Phase 1 升级: 激活种子 + 路径作为 context 注入 LoRA 专家模型。
 """
 
+from __future__ import annotations
+
+import logging
 from typing import Optional
+
 from .graph_db import GraphDB
 from .router import RippleResult, ActivationNode
 from .config import RELATION_NAMES, TOP_K_SEEDS, TOP_K_PATHS
+
+log = logging.getLogger(__name__)
 
 
 def answer_from_activation(
@@ -142,3 +148,173 @@ def answer_as_dict(result: RippleResult) -> dict:
         'matched_seeds': len(result.seed_matches),
         'total_activated': len(result.activated),
     }
+
+
+def answer_with_expert(
+    result: RippleResult,
+    graph: Optional[GraphDB],
+    expert_manager: Optional[object] = None,
+) -> dict:
+    """使用专家模型生成回答（Phase 1），不可用时降级到 Phase 0。
+
+    核心流程:
+      1. expert_manager 为 None 或 expert_available=False → 降级到 answer_from_activation()
+      2. 空激活（top_seeds 为空）→ 降级到 Phase 0
+      3. 使用 ContextInjector 构造 prompt
+      4. 单领域 → ExpertManager.infer()
+      5. 多领域 → ExpertManager.infer_multi_domain() + CrossValidator
+      6. 组装混合回答（expert_answer + retrieval_answer）
+
+    Args:
+        result: 路由器返回的 RippleResult
+        graph: 知识图谱连接（用于补充释义）
+        expert_manager: ExpertManager 实例（可选）
+
+    Returns:
+        包含 expert_answer, retrieval_answer, expert_domain, expert_available,
+        reliability_score, cross_validation_status, cross_validation_discount 的字典
+    """
+    from .context_injector import ContextInjector
+    from .cross_validator import CrossValidator, CrossValidationStatus
+    from .config import EXPERT_MAX_NEW_TOKENS
+
+    # ── 降级条件 1: expert_manager 为 None 或不可用 ──
+    if expert_manager is None or not expert_manager.expert_available:
+        retrieval_text = answer_from_activation(result, graph)
+        return {
+            'expert_answer': None,
+            'retrieval_answer': retrieval_text,
+            'expert_domain': None,
+            'expert_available': False,
+            'reliability_score': None,
+            'cross_validation_status': 'none',
+            'cross_validation_discount': 1.0,
+        }
+
+    # ── 降级条件 2: 空激活 ──
+    if not result.top_seeds:
+        retrieval_text = answer_from_activation(result, graph)
+        return {
+            'expert_answer': None,
+            'retrieval_answer': retrieval_text,
+            'expert_domain': None,
+            'expert_available': False,
+            'reliability_score': None,
+            'cross_validation_status': 'none',
+            'cross_validation_discount': 1.0,
+        }
+
+    # ── 构造上下文 prompt ──
+    try:
+        injector = ContextInjector()
+        prompt_result = injector.build_prompt(result, result.query)
+        prompt = prompt_result.full_prompt
+    except Exception as e:
+        log.error("构造上下文 prompt 失败，降级到 Phase 0: %s", e, exc_info=True)
+        retrieval_text = answer_from_activation(result, graph)
+        return {
+            'expert_answer': None,
+            'retrieval_answer': retrieval_text,
+            'expert_domain': None,
+            'expert_available': False,
+            'reliability_score': None,
+            'cross_validation_status': 'none',
+            'cross_validation_discount': 1.0,
+        }
+
+    # ── 检索式回答（始终保留）──
+    retrieval_text = answer_from_activation(result, graph)
+
+    # ── 专家推理 ──
+    selected_domains = result.selected_domains or []
+
+    try:
+        if len(selected_domains) <= 1:
+            # 单领域推理
+            target_domain = selected_domains[0] if selected_domains else ""
+            inference_result = expert_manager.infer(
+                prompt=prompt,
+                target_domain=target_domain,
+                max_new_tokens=EXPERT_MAX_NEW_TOKENS,
+            )
+
+            if inference_result.fallback or not inference_result.answer_text:
+                # 专家推理降级
+                return {
+                    'expert_answer': None,
+                    'retrieval_answer': retrieval_text,
+                    'expert_domain': None,
+                    'expert_available': False,
+                    'reliability_score': None,
+                    'cross_validation_status': 'none',
+                    'cross_validation_discount': 1.0,
+                }
+
+            return {
+                'expert_answer': inference_result.answer_text,
+                'retrieval_answer': retrieval_text,
+                'expert_domain': inference_result.domain,
+                'expert_available': True,
+                'reliability_score': inference_result.reliability,
+                'cross_validation_status': 'none',
+                'cross_validation_discount': 1.0,
+            }
+
+        else:
+            # 多领域推理 + 交叉验证
+            inference_results = expert_manager.infer_multi_domain(
+                prompt=prompt,
+                domains=selected_domains,
+                max_new_tokens=EXPERT_MAX_NEW_TOKENS,
+            )
+
+            if not inference_results:
+                # 所有领域推理均降级
+                return {
+                    'expert_answer': None,
+                    'retrieval_answer': retrieval_text,
+                    'expert_domain': None,
+                    'expert_available': False,
+                    'reliability_score': None,
+                    'cross_validation_status': 'none',
+                    'cross_validation_discount': 1.0,
+                }
+
+            # 执行交叉验证
+            answers = [r.answer_text for r in inference_results]
+            domains = [r.domain for r in inference_results]
+
+            validator = CrossValidator()
+            cv_result = validator.validate(answers, domains)
+
+            # 选择主回答
+            if cv_result.merged_answer:
+                expert_answer = cv_result.merged_answer
+            else:
+                # 取第一个非降级结果作为主回答
+                expert_answer = inference_results[0].answer_text
+
+            # 主领域和可靠性取第一个推理结果
+            primary = inference_results[0]
+
+            return {
+                'expert_answer': expert_answer,
+                'retrieval_answer': retrieval_text,
+                'expert_domain': primary.domain,
+                'expert_available': True,
+                'reliability_score': primary.reliability,
+                'cross_validation_status': cv_result.status.value,
+                'cross_validation_discount': cv_result.discount,
+            }
+
+    except Exception as e:
+        log.error("专家推理异常，降级到 Phase 0: %s", e, exc_info=True)
+        return {
+            'expert_answer': None,
+            'retrieval_answer': retrieval_text,
+            'expert_domain': None,
+            'expert_available': False,
+            'reliability_score': None,
+            'cross_validation_status': 'none',
+            'cross_validation_discount': 1.0,
+        }

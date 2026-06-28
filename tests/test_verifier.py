@@ -66,6 +66,8 @@ class TestVerifier:
         conn = _setup_db()
         self.db = GraphDB(':memory:')
         self.db.conn = conn
+        self.db.ensure_phase2_tables()
+        self.db.ensure_phase3_tables()
 
     def teardown_method(self):
         self.db.close()

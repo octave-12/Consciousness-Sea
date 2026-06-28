@@ -10,12 +10,48 @@
 """
 
 from collections import defaultdict, deque
+import threading
 from typing import Optional
 from .graph_db import GraphDB
 from .config import (
     RIPPLE_DEPTH, RIPPLE_DECAY, INITIAL_ACTIVATION,
     DOMAIN_THRESHOLD, TOP_K_SEEDS, MAX_ACTIVATION,
+    GLOBAL_WEIGHT_RATIO, PERSONAL_WEIGHT_RATIO,
 )
+
+
+# ═══════════════════════════════════════════════════════════
+#  ColdStartManager 模块级缓存单例
+# ═══════════════════════════════════════════════════════════
+
+_cold_start_manager: Optional[object] = None
+_cold_start_graph_id: Optional[int] = None
+_cold_start_lock = threading.Lock()
+
+
+def _get_cold_start_manager(graph: GraphDB):
+    """获取 ColdStartManager 单例（线程安全，双重检查锁定）
+
+    当 graph 对象发生变化时（如测试中不同测试使用不同 GraphDB 实例），
+    自动重建 ColdStartManager 以绑定新的 graph。
+    """
+    global _cold_start_manager, _cold_start_graph_id
+    graph_id = id(graph)
+    if _cold_start_manager is None or _cold_start_graph_id != graph_id:
+        with _cold_start_lock:
+            if _cold_start_manager is None or _cold_start_graph_id != graph_id:
+                from .cold_start import ColdStartManager
+                _cold_start_manager = ColdStartManager(graph)
+                _cold_start_graph_id = graph_id
+    return _cold_start_manager
+
+
+def _reset_cold_start_manager():
+    """重置 ColdStartManager 单例（仅用于测试）"""
+    global _cold_start_manager, _cold_start_graph_id
+    with _cold_start_lock:
+        _cold_start_manager = None
+        _cold_start_graph_id = None
 
 
 class ActivationNode:
@@ -63,7 +99,8 @@ class RippleResult:
         )
 
 
-def route(query: str, graph: GraphDB, user_label: Optional[str] = None) -> RippleResult:
+def route(query: str, graph: GraphDB, user_label: Optional[str] = None,
+          skip_verification: bool = False, max_depth: Optional[int] = None) -> RippleResult:
     """
     执行一次完整的查询路由。
 
@@ -71,6 +108,8 @@ def route(query: str, graph: GraphDB, user_label: Optional[str] = None) -> Rippl
         query: 用户查询文本
         graph: 知识图谱连接
         user_label: 可选，用户种子 label（用于个人偏向）
+        skip_verification: 是否跳过校验和熏习（好奇心引擎虚拟查询时为 True）[Phase 5]
+        max_depth: 覆盖默认涟漪传播深度（好奇心引擎探索时限制深度）[Phase 5]
 
     Returns:
         RippleResult 包含激活节点、路径、领域得分
@@ -78,8 +117,14 @@ def route(query: str, graph: GraphDB, user_label: Optional[str] = None) -> Rippl
     result = RippleResult()
     result.query = query
 
+    # Phase 5: 使用自定义深度或默认深度
+    effective_depth = max_depth if max_depth is not None else RIPPLE_DEPTH
+
+    # ── 0.5 获取冷启动因子（Phase 3） ──────────────────
+    cold_factor = _get_cold_start_manager(graph).get_cold_factor(user_label)
+
     # ── 0. 用户种子预激活（如果有） ─────────────────────
-    if user_label:
+    if user_label and not skip_verification:
         user_seed = graph.get_seed(user_label)
         if user_seed:
             _activate_user_seed(result, graph, user_seed)
@@ -103,7 +148,12 @@ def route(query: str, graph: GraphDB, user_label: Optional[str] = None) -> Rippl
         bfs_queue.append(label)
 
     # ── 3. BFS 涟漪传播 ────────────────────────────────
-    for wave in range(RIPPLE_DEPTH):
+    # Phase 2: 预加载个人业力权重，用于双层权重叠加
+    personal_weight_map = {} if skip_verification else _preload_personal_weights(
+        graph, user_label, list(bfs_queue)
+    )
+
+    for wave in range(effective_depth):
         # 批量预加载：收集本轮所有边的目标和对应种子信息
         all_targets = set()
         node_edges: dict[str, list[dict]] = {}  # 缓存每节点的出边
@@ -113,7 +163,7 @@ def route(query: str, graph: GraphDB, user_label: Optional[str] = None) -> Rippl
             src_node = result.activated.get(src_label)
             if not src_node:
                 continue
-            edges = graph.outgoing_edges(src_label)
+            edges = graph.outgoing_edges(src_label, exclude_meta=True)
             node_edges[src_label] = edges
             for e in edges:
                 all_targets.add(e['target'])
@@ -130,7 +180,16 @@ def route(query: str, graph: GraphDB, user_label: Optional[str] = None) -> Rippl
             for e in node_edges.get(src_label, []):
                 target = e['target']
                 relation = e['relation']
-                weight = e.get('weight', 0.5)
+
+                # Phase 2: 双层权重叠加 + Phase 3: 冷启动因子
+                # Phase 5: 虚拟查询时使用全局权重
+                global_w = e.get('weight', 0.5)
+                if skip_verification:
+                    weight = global_w
+                else:
+                    personal_w = personal_weight_map.get((src_label, target, relation), 0.0)
+                    weight = global_w * GLOBAL_WEIGHT_RATIO + personal_w * PERSONAL_WEIGHT_RATIO * cold_factor
+
                 depth = src_node.depth + 1
 
                 ripple_activation = (
@@ -151,7 +210,7 @@ def route(query: str, graph: GraphDB, user_label: Optional[str] = None) -> Rippl
                         parent=src_label,
                     )
                     result.activated[target] = node
-                    if depth < RIPPLE_DEPTH:
+                    if depth < effective_depth:
                         next_wave.append(target)
 
                 result.paths.append({
@@ -169,6 +228,10 @@ def route(query: str, graph: GraphDB, user_label: Optional[str] = None) -> Rippl
     for node in result.activated.values():
         domain = node.domain or '常识'
         result.domain_scores[domain] += node.activation
+
+    # Phase 5: 虚拟查询直接返回结果，不触发校验和熏习
+    if skip_verification:
+        return result
 
     return result
 
@@ -213,3 +276,23 @@ def _activate_user_seed(result: RippleResult, graph: GraphDB, user_seed: dict):
             'depth': 1,
             'ripple_activation': round(pre_act, 4),
         })
+
+
+def _preload_personal_weights(
+    graph: GraphDB, user_label: str | None, source_labels: list[str],
+) -> dict[tuple[str, str, str], float]:
+    """批量预加载个人业力权重
+
+    Phase 2: 在 BFS 传播开始前预加载，避免逐条查询。
+
+    Args:
+        graph: 知识图谱连接
+        user_label: 用户标识（可选）
+        source_labels: 源节点 label 列表
+
+    Returns:
+        {(source, target, relation): weight} 映射
+    """
+    if not user_label or not source_labels:
+        return {}
+    return graph.batch_get_personal_weights(user_label, source_labels)

@@ -61,6 +61,31 @@ def ensure_history_table(conn: sqlite3.Connection) -> None:
     """)
     conn.commit()
 
+    # 迁移：新增 user_id 列（兼容已有数据库）
+    try:
+        conn.execute("ALTER TABLE query_history ADD COLUMN user_id TEXT DEFAULT NULL")
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_history_user_id
+            ON query_history (user_id)
+        """)
+        conn.commit()
+    except Exception:
+        # 列已存在时忽略
+        pass
+
+    # 迁移：新增专家相关列（兼容已有数据库）
+    for column_def in [
+        "expert_domain TEXT DEFAULT NULL",
+        "expert_available INTEGER DEFAULT 0",
+        "cross_validation_status TEXT DEFAULT 'none'",
+    ]:
+        try:
+            conn.execute(f"ALTER TABLE query_history ADD COLUMN {column_def}")
+        except Exception:
+            # 列已存在时忽略
+            pass
+    conn.commit()
+
 
 def record_query(
     conn: sqlite3.Connection,
@@ -69,6 +94,11 @@ def record_query(
     selected_domains: list[str] | None = None,
     confidence: float = 0.0,
     karma_direction: int = 0,
+    user_id: str | None = None,
+    *,
+    expert_domain: str | None = None,
+    expert_available: bool = False,
+    cross_validation_status: str = "none",
 ) -> bool:
     """
     记录一次查询到历史表。
@@ -83,6 +113,10 @@ def record_query(
         selected_domains: 选定的领域列表
         confidence: 校验置信度
         karma_direction: 熏习方向 (+1 / -1 / 0)
+        user_id: 用户标识（可选）
+        expert_domain: 专家领域名（Phase 1 可选）
+        expert_available: 专家是否可用（默认 False）
+        cross_validation_status: 交叉验证状态（默认 "none"）
 
     Returns:
         True 表示写入成功，False 表示写入失败
@@ -103,8 +137,10 @@ def record_query(
         conn.execute(
             """
             INSERT INTO query_history
-                (query_text, matched_seeds_count, selected_domains, confidence, karma_direction, created_at)
-            VALUES (?, ?, ?, ?, ?, ?)
+                (query_text, matched_seeds_count, selected_domains, confidence,
+                 karma_direction, created_at, user_id,
+                 expert_domain, expert_available, cross_validation_status)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 truncated_query,
@@ -113,6 +149,10 @@ def record_query(
                 confidence,
                 karma_direction,
                 created_at,
+                user_id,
+                expert_domain,
+                int(expert_available),
+                cross_validation_status,
             ),
         )
         conn.commit()
@@ -159,7 +199,8 @@ def get_history(
         rows = conn.execute(
             """
             SELECT query_id, query_text, matched_seeds_count,
-                   selected_domains, confidence, karma_direction, created_at
+                   selected_domains, confidence, karma_direction, created_at, user_id,
+                   expert_domain, expert_available, cross_validation_status
             FROM query_history
             ORDER BY created_at DESC
             LIMIT ? OFFSET ?
@@ -183,6 +224,10 @@ def get_history(
                 'confidence': row[4],
                 'karma_direction': row[5],
                 'created_at': row[6],
+                'user_id': row[7],  # M-7: 返回 user_id
+                'expert_domain': row[8],
+                'expert_available': bool(row[9]) if row[9] is not None else False,
+                'cross_validation_status': row[10] or 'none',
             })
 
         return {

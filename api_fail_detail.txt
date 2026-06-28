@@ -1,0 +1,72 @@
+﻿============================= test session starts =============================
+platform win32 -- Python 3.12.10, pytest-9.1.1, pluggy-1.6.0 -- E:\server\Python312\python.exe
+cachedir: .pytest_cache
+rootdir: D:\soso\projects\consciousnessSea
+configfile: pyproject.toml
+plugins: anyio-4.14.1
+collecting ... collected 1 item
+
+tests/test_api.py::TestQueryEndpoint::test_user_parameter_passed FAILED  [100%]
+
+================================== FAILURES ===================================
+________________ TestQueryEndpoint.test_user_parameter_passed _________________
+
+self = <tests.test_api.TestQueryEndpoint object at 0x00000203EE497830>
+
+    def test_user_parameter_passed(self):
+        """user 鍙傛暟姝ｅ父浼犻€?""
+        resp = client.post('/api/v1/query', json={
+            'query': '鎰熷啋',
+            'user': 'test_user',
+        })
+        # 鍗充娇 user 瀵瑰簲鐨勭瀛愪笉瀛樺湪锛屾煡璇粛搴旀垚鍔?
+>       assert resp.status_code == 200
+E       assert 503 == 200
+E        +  where 503 = <Response [503 Service Unavailable]>.status_code
+
+tests\test_api.py:274: AssertionError
+------------------------------ Captured log call ------------------------------
+ERROR    api:api.py:562 鏁版嵁搴撴搷浣滃け璐? no such table: user_cold_start
+============================== warnings summary ===============================
+C:\Users\octave\AppData\Roaming\Python\Python312\site-packages\_pytest\config\__init__.py:1464
+  C:\Users\octave\AppData\Roaming\Python\Python312\site-packages\_pytest\config\__init__.py:1464: PytestConfigWarning: Unknown config option: asyncio_mode
+  
+    self._warn_or_fail_if_strict(f"Unknown config option: {key}\n")
+
+C:\Users\octave\AppData\Roaming\Python\Python312\site-packages\fastapi\testclient.py:1
+  C:\Users\octave\AppData\Roaming\Python\Python312\site-packages\fastapi\testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+api.py:90
+  D:\soso\projects\consciousnessSea\api.py:90: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+C:\Users\octave\AppData\Roaming\Python\Python312\site-packages\fastapi\applications.py:4675
+C:\Users\octave\AppData\Roaming\Python\Python312\site-packages\fastapi\applications.py:4675
+  C:\Users\octave\AppData\Roaming\Python\Python312\site-packages\fastapi\applications.py:4675: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    return self.router.on_event(event_type)  # ty: ignore[deprecated]
+
+api.py:121
+  D:\soso\projects\consciousnessSea\api.py:121: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("shutdown")
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+FAILED tests/test_api.py::TestQueryEndpoint::test_user_parameter_passed - assert 503 == 200
+ +  where 503 = <Response [503 Service Unavailable]>.status_code
+======================== 1 failed, 6 warnings in 0.40s ========================

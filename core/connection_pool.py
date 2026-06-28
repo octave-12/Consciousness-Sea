@@ -35,6 +35,12 @@ class ConnectionPoolExhausted(Exception):
     pass
 
 
+class ConnectionPoolClosed(Exception):
+    """连接池已关闭异常 — close_all() 后不再允许操作"""
+
+    pass
+
+
 class ConnectionPool:
     """SQLite 连接池 — 线程安全连接管理
 
@@ -54,6 +60,7 @@ class ConnectionPool:
         self._in_use: set[int] = set()  # 存储 id(graph) 用于追踪
         self._lock = threading.Lock()
         self._created_count = 0  # 已创建的连接总数
+        self._closed = False  # C-1: close_all() 后阻止新操作
 
     def _create_connection(self) -> GraphDB:
         """创建新的 GraphDB 连接并设置 PRAGMA"""
@@ -79,8 +86,13 @@ class ConnectionPool:
             GraphDB 连接实例
 
         Raises:
+            ConnectionPoolClosed: close_all() 后不再允许 acquire
             ConnectionPoolExhausted: 所有连接都在使用中且等待超时
         """
+        # C-1: 检查连接池是否已关闭
+        if self._closed:
+            raise ConnectionPoolClosed("连接池已关闭，不再允许 acquire")
+
         # 1. 尝试从空闲队列取
         try:
             graph = self._idle.get_nowait()
@@ -91,12 +103,27 @@ class ConnectionPool:
             pass
 
         # 2. 尝试新建连接（未超上限）
+        # M-1: 将 _create_connection() 移到锁外，创建失败时归还名额
+        should_create = False
         with self._lock:
+            if self._closed:
+                raise ConnectionPoolClosed("连接池已关闭，不再允许 acquire")
             if self._created_count < self._pool_size:
-                self._created_count += 1
+                self._created_count += 1  # 预占名额
+                should_create = True
+
+        if should_create:
+            # 锁外创建连接
+            try:
                 graph = self._create_connection()
+            except Exception:
+                # M-1: 创建失败，归还名额
+                with self._lock:
+                    self._created_count -= 1
+                raise
+            with self._lock:
                 self._in_use.add(id(graph))
-                return graph
+            return graph
 
         # 3. 阻塞等待归还
         try:
@@ -114,11 +141,20 @@ class ConnectionPool:
         """归还连接到池中
 
         归还前重置缓存状态，确保下次使用时重新加载最新数据。
+        如果连接池已关闭，直接关闭连接而不放回队列。
 
         Args:
             graph: 要归还的 GraphDB 连接实例
         """
         if graph is None:
+            return
+
+        # C-1: 如果连接池已关闭，直接关闭连接
+        if self._closed:
+            graph.close()
+            with self._lock:
+                self._in_use.discard(id(graph))
+            log.debug("连接池已关闭，直接关闭归还的连接")
             return
 
         with self._lock:
@@ -134,15 +170,26 @@ class ConnectionPool:
 
         关闭空闲队列中的所有连接，并清空使用中集合。
         使用中的连接由于已被请求线程持有，无法强制关闭。
+        设置 _closed 标志，阻止后续 acquire() 和 release() 操作。
         """
+        # C-2: 锁内只收集要关闭的连接列表，锁外再关闭（避免死锁）
         with self._lock:
-            # 关闭所有空闲连接
+            self._closed = True  # C-1: 设置关闭标志
+            # 收集空闲队列中的连接
+            to_close: list[GraphDB] = []
             while not self._idle.empty():
                 try:
-                    graph = self._idle.get_nowait()
-                    graph.close()
+                    to_close.append(self._idle.get_nowait())
                 except queue.Empty:
                     break
             self._in_use.clear()
             self._created_count = 0
+
+        # 锁外逐个关闭连接
+        for graph in to_close:
+            try:
+                graph.close()
+            except Exception as e:
+                log.warning("关闭连接时出错: %s", e)
+
         log.info("连接池已关闭所有连接")

@@ -2,7 +2,8 @@
 API 接口测试 (TASK-019)
 
 使用 FastAPI TestClient + 内存数据库测试所有 HTTP 端点。
-通过覆盖依赖注入 get_graph_db() 来使用内存数据库。
+通过覆盖依赖注入 get_pool()/get_session_manager()/get_user_manager()/get_observer()
+来使用内存数据库。
 """
 
 import sqlite3
@@ -15,6 +16,10 @@ from fastapi.testclient import TestClient
 
 from api import app
 from core.graph_db import GraphDB
+from core.connection_pool import ConnectionPool
+from core.user_manager import UserManager
+from core.session_manager import SessionManager, SessionContext
+from core.observer import Observer
 
 
 # ═══════════════════════════════════════════════════════════
@@ -49,6 +54,42 @@ def _build_test_db() -> GraphDB:
             created_at TEXT NOT NULL DEFAULT (datetime('now')),
             PRIMARY KEY (source, target, relation)
         );
+        CREATE TABLE IF NOT EXISTS karma_edges_personal (
+            user_label  TEXT    NOT NULL,
+            source      TEXT    NOT NULL,
+            target      TEXT    NOT NULL,
+            relation    TEXT    NOT NULL,
+            weight      REAL    NOT NULL,
+            source_tag  TEXT    NOT NULL DEFAULT 'personal_karma',
+            updated_at  TEXT    NOT NULL,
+            PRIMARY KEY (user_label, source, target, relation)
+        );
+        CREATE TABLE IF NOT EXISTS distillation_pool (
+            candidate_id        INTEGER PRIMARY KEY AUTOINCREMENT,
+            canonical_source    TEXT    NOT NULL,
+            canonical_target    TEXT    NOT NULL,
+            canonical_relation  TEXT    NOT NULL,
+            representative_label TEXT   NOT NULL,
+            count               INTEGER NOT NULL DEFAULT 1,
+            contributor_users   TEXT    NOT NULL DEFAULT '[]',
+            status              TEXT    NOT NULL DEFAULT 'pending',
+            upgraded_at         TEXT,
+            created_at          TEXT    NOT NULL,
+            updated_at          TEXT    NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS param_stats (
+            stat_id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            query_text       TEXT    NOT NULL,
+            decay_factor     REAL    NOT NULL,
+            domain_threshold REAL    NOT NULL,
+            confidence_high  REAL    NOT NULL,
+            ripple_depth     INTEGER NOT NULL,
+            activated_count  INTEGER NOT NULL,
+            selected_domains TEXT    NOT NULL,
+            confidence       REAL    NOT NULL,
+            karma_direction  INTEGER NOT NULL,
+            created_at       TEXT    NOT NULL
+        );
     """)
 
     # 种子数据
@@ -60,10 +101,10 @@ def _build_test_db() -> GraphDB:
         ('薛定谔方程', '薛定谔方程', 'CONCEPT', '[]', '物理',
          'Schrodinger equation'),
         ('人工智能', '人工智能', 'CONCEPT', '["AI"]', '计算机',
-         'artificial intelligence'),
+          'artificial intelligence'),
         ('深度学习', '深度学习', 'CONCEPT', '[]', '计算机', 'deep learning'),
         ('苏轼', '苏轼', 'CONCEPT', '["苏东坡"]', '文学',
-         'Su Shi (1037-1101)'),
+          'Su Shi (1037-1101)'),
         ('电脑', '电脑', 'CONCEPT', '["计算机"]', '计算机', 'computer'),
         ('水', '水', 'CONCEPT', '[]', '常识', 'water'),
     ]
@@ -90,29 +131,64 @@ def _build_test_db() -> GraphDB:
 
     db = GraphDB(':memory:')
     db.conn = conn
+    db.ensure_phase2_tables()
+    db.ensure_phase3_tables()
     return db
 
 
 # ═══════════════════════════════════════════════════════════
-#  依赖注入覆盖
+#  依赖注入覆盖 — 使用内存数据库的简易连接池
 # ═══════════════════════════════════════════════════════════
 
 # 全局共享的内存数据库实例（check_same_thread=False 允许跨线程）
 _test_db = _build_test_db()
 
 
-def _override_get_graph_db():
-    """替代 api.py 中的 get_graph_db()，使用内存数据库。
+class _InMemoryPool:
+    """内存数据库简易连接池 — 测试专用
 
-    复用同一个数据库实例（check_same_thread=False 确保线程安全），
-    不在 finally 中关闭连接，避免后续测试无法使用。
+    每次 acquire() 返回同一个内存数据库实例，
+    release() 不做任何操作（内存数据库无需关闭）。
     """
-    yield _test_db
+
+    def acquire(self):
+        return _test_db
+
+    def release(self, graph):
+        pass  # 内存数据库无需关闭
+
+    def close_all(self):
+        pass
 
 
-# 覆盖 FastAPI 依赖注入：用内存数据库替代真实数据库
-from api import get_graph_db
-app.dependency_overrides[get_graph_db] = _override_get_graph_db
+_test_pool = _InMemoryPool()
+_test_user_manager = UserManager(_test_pool)
+_test_session_manager = SessionManager(_test_pool)
+_test_observer = Observer(_test_pool)
+
+
+def _override_get_pool():
+    yield _test_pool
+
+
+def _override_get_session_manager():
+    yield _test_session_manager
+
+
+def _override_get_user_manager():
+    yield _test_user_manager
+
+
+def _override_get_observer():
+    yield _test_observer
+
+
+# 覆盖 FastAPI 依赖注入
+from api import get_pool, get_session_manager, get_user_manager, get_observer
+app.dependency_overrides[get_pool] = _override_get_pool
+app.dependency_overrides[get_session_manager] = _override_get_session_manager
+app.dependency_overrides[get_user_manager] = _override_get_user_manager
+app.dependency_overrides[get_observer] = _override_get_observer
 
 # 创建 TestClient
 client = TestClient(app)

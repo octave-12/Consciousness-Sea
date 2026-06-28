@@ -270,6 +270,10 @@ def verify(
     answer_text: str,
     result: RippleResult,
     graph: GraphDB,
+    *,
+    expert_domain: str | None = None,
+    reliability: float = 1.0,
+    cv_discount: float = 1.0,
 ) -> dict:
     """
     校验回答质量，返回置信度和熏习决策。
@@ -278,14 +282,21 @@ def verify(
         answer_text: 生成的回答文本（Phase 0 是检索式回答）
         result: 路由器返回的涟漪结果
         graph: 知识图谱连接（用于写回业力）
+        expert_domain: 专家领域名（Phase 1 可选）
+        reliability: 专家可靠性分数 [0.0, 1.0]（默认 1.0，Phase 0 不打折）
+        cv_discount: 交叉验证折扣系数 [0.0, 1.0]（默认 1.0，无打折）
 
     Returns:
         {
-            'confidence': float,      # 0~1
+            'confidence': float,      # 0~1 (actual = raw × cv_discount × reliability)
+            'raw_confidence': float,  # 原始置信度（Phase 0 时等于 confidence）
             'karma_direction': int,   # +1 正向, -1 负向, 0 不动
             'matched_keywords': int,
             'total_keywords': int,
             'decision': str,          # 'reinforce' | 'correct' | 'uncertain'
+            'expert_domain': str | None,
+            'reliability': float,
+            'cv_discount': float,
         }
     """
     from .config import CONFIDENCE_HIGH, CONFIDENCE_LOW
@@ -295,10 +306,14 @@ def verify(
     if not keywords:
         return {
             'confidence': 0.5,
+            'raw_confidence': 0.5,
             'karma_direction': 0,
             'matched_keywords': 0,
             'total_keywords': 0,
             'decision': 'uncertain',
+            'expert_domain': expert_domain,
+            'reliability': reliability,
+            'cv_discount': cv_discount,
         }
 
     # ── 2. 匹配关键词到激活区域（加权） ───────────────────
@@ -328,13 +343,16 @@ def verify(
             weighted_matched += weight
 
     # ── 3. 加权置信度计算 ─────────────────────────────────
-    confidence = weighted_matched / weighted_total if weighted_total > 0 else 0.0
+    raw_confidence = weighted_matched / weighted_total if weighted_total > 0 else 0.0
 
-    # ── 4. 熏习决策 ───────────────────────────────────────
-    if confidence >= CONFIDENCE_HIGH:
+    # 可靠性加权: actual_confidence = raw_confidence × cv_discount × reliability
+    actual_confidence = raw_confidence * cv_discount * reliability
+
+    # ── 4. 熏习决策（基于 actual_confidence） ─────────────
+    if actual_confidence >= CONFIDENCE_HIGH:
         karma_direction = +1
         decision = 'reinforce'
-    elif confidence < CONFIDENCE_LOW:
+    elif actual_confidence < CONFIDENCE_LOW:
         karma_direction = -1
         decision = 'correct'
     else:
@@ -342,11 +360,15 @@ def verify(
         decision = 'uncertain'
 
     return {
-        'confidence': round(confidence, 4),
+        'confidence': round(actual_confidence, 4),
+        'raw_confidence': round(raw_confidence, 4),
         'karma_direction': karma_direction,
         'matched_keywords': int(weighted_matched),
         'total_keywords': len(keywords),
         'decision': decision,
+        'expert_domain': expert_domain,
+        'reliability': reliability,
+        'cv_discount': cv_discount,
     }
 
 
@@ -355,57 +377,311 @@ def apply_karma(
     graph: GraphDB,
     karma_direction: int,
     dry_run: bool = False,
+    user_label: str | None = None,
+    answer_text: str | None = None,
+    verify_result: dict | None = None,
 ) -> int:
     """
     应用熏习：对本次查询中 co-activated 的种子对修改业力。
+
+    Phase 2 变更:
+      - Top-N 种子筛选（KARMA_FULL_SET=False 时）
+      - 路径级过滤：仅 source 和 target 均在 Top-N 集合内的路径
+      - KARMA_MAX_PAIRS 上限保护
+      - 双层业力写入（user_label 不为 None 时写入个人层）
+      - 提炼池候选提交
 
     Args:
         result: 涟漪传播结果
         graph: 知识图谱连接
         karma_direction: +1 / -1 / 0
         dry_run: True 时只统计不写入
+        user_label: 用户标识（可选，Phase 2 新增）
+        answer_text: 专家答案文本（可选，Phase 3 新增，用于别名回指和候选种子提取）
 
     Returns:
         实际修改的边数
     """
-    from .config import KARMA_DELTA, KARMA_FULL_SET, KARMA_TOP_N
+    from .config import KARMA_DELTA, KARMA_FULL_SET, KARMA_TOP_N, KARMA_MAX_PAIRS
 
     if karma_direction == 0:
         return 0
 
     delta = KARMA_DELTA * karma_direction
 
-    # 选取要熏习的种子
+    # ── 1. 选取 Top-N 种子 ──────────────────────────────
     if KARMA_FULL_SET:
-        # Phase 0: 所有 co-activated pairs
-        targets = sorted(
-            result.activated.values(),
-            key=lambda n: n.activation, reverse=True
-        )
+        # Phase 0: 所有 co-activated pairs（向后兼容）
+        target_labels = set(result.activated.keys())
     else:
         # Phase 2: 只选 Top-N
-        targets = sorted(
+        top_nodes = sorted(
             result.activated.values(),
             key=lambda n: n.activation, reverse=True
         )[:KARMA_TOP_N]
+        target_labels = {n.label for n in top_nodes}
 
-    modified = 0
-    # 对 targets 中的所有 pair 修改业力
-    # （只熏在本次查询中被涟漪传播路径覆盖的边，而非所有可能的 pairs）
+    # ── 2. 路径级筛选：仅 source 和 target 均在 target_labels 中的路径 ──
+    filtered_paths = []
     seen_pairs = set()
     for path in result.paths:
         pair = (path['source'], path['target'])
-        if pair not in seen_pairs:
+        if pair in seen_pairs:
+            continue
+        if path['source'] in target_labels and path['target'] in target_labels:
             seen_pairs.add(pair)
-            if not dry_run:
-                graph.adjust_karma(
-                    path['source'], path['target'],
-                    relation=path['relation'],
-                    delta=delta,
-                )
-            modified += 1
+            filtered_paths.append(path)
 
+    # ── 3. 上限保护（KARMA_MAX_PAIRS） ──────────────────
+    if len(filtered_paths) > KARMA_MAX_PAIRS:
+        filtered_paths = filtered_paths[:KARMA_MAX_PAIRS]
+
+    # ── 4. 执行熏习 ────────────────────────────────────
+    modified = 0
+    for path in filtered_paths:
+        if not dry_run:
+            # Phase 2: 双层业力写入
+            if user_label:
+                graph.adjust_karma_personal(
+                    user_label, path['source'], path['target'],
+                    relation=path['relation'], delta=delta,
+                )
+            else:
+                graph.adjust_karma_atomic(
+                    path['source'], path['target'],
+                    relation=path['relation'], delta=delta,
+                )
+        modified += 1
+
+    # ── 5. 提炼池候选提交（Phase 2） ───────────────────
+    if not dry_run and user_label and karma_direction != 0:
+        try:
+            from .distillation_pool import DistillationPool
+            distill = DistillationPool(graph)
+            for path in filtered_paths:
+                distill.submit_candidate(
+                    user_label=user_label,
+                    source=path['source'],
+                    target=path['target'],
+                    relation=path['relation'],
+                )
+        except Exception as e:
+            # 提炼池提交失败不影响熏习结果
+            log.warning("提炼池候选提交失败: %s", e)
+
+    # ── 6. commit 重试逻辑 ──────────────────────────────
     if not dry_run:
-        graph.conn.commit()
+        _commit_with_retry(graph)
+
+    # ── 7. Phase 3 后处理 ──────────────────────────────
+    if not dry_run and karma_direction != 0:
+        _post_karma_phase3(result, graph, user_label, answer_text)
+
+    # ── 8. Phase 4 后处理 ──────────────────────────────
+    if not dry_run and karma_direction != 0:
+        _post_karma_phase4(result, graph, verify_result or {})
+
+    # ── 9. Phase 6 后处理 ──────────────────────────────
+    if not dry_run and karma_direction != 0:
+        _post_karma_phase6(result, graph, verify_result or {})
 
     return modified
+
+
+def _commit_with_retry(graph: GraphDB, max_retries: int = 3) -> None:
+    """commit 重试逻辑 — 失败后先 rollback 再重试
+
+    SQLite 不支持重试失败的 commit，必须先 rollback。
+    delta 只有 0.01，丢失可接受。
+    """
+    for attempt in range(1, max_retries + 1):
+        try:
+            graph.conn.commit()
+            break
+        except Exception as e:
+            # 先 rollback，清除失败的事务状态
+            try:
+                graph.conn.rollback()
+            except Exception:
+                pass
+            if attempt < max_retries:
+                log.warning("commit 失败 (第 %d 次)，已 rollback，重试中: %s", attempt, e)
+            else:
+                # delta 只有 0.01，丢失可接受
+                log.warning("commit 重试 %d 次后仍失败，跳过本次熏习: %s", max_retries, e)
+
+
+def _post_karma_phase3(
+    result: RippleResult,
+    graph: GraphDB,
+    user_label: str | None = None,
+    answer_text: str | None = None,
+) -> None:
+    """Phase 3 后处理：别名回指记录 + 候选种子提取"""
+    # 1. 别名回指记录
+    try:
+        if answer_text:
+            from .alias_expander import AliasExpander, BackrefEvent
+            events, unmatched = _extract_backref_events(result, answer_text, graph)
+            if events or unmatched:
+                expander = AliasExpander(graph)
+                results = expander.record_backref_events(events, unmatched)
+                for r in results:
+                    if r.action == 'aliased':
+                        log.info("alias auto-extended: '%s' → seed '%s'", r.keyword, r.seed_label)
+    except Exception as e:
+        log.warning("别名回指记录失败: %s", e)
+
+    # 2. 候选种子提取
+    try:
+        if answer_text:
+            from .seed_candidate import SeedCandidateManager
+            unmatched = _extract_unmatched_keywords(result, answer_text, graph)
+            if unmatched:
+                co_occur = list(result.activated.keys())[:10]
+                manager = SeedCandidateManager(graph)
+                manager.process_unmatched_keywords(unmatched, co_occur)
+    except Exception as e:
+        log.warning("候选种子提取失败: %s", e)
+
+
+def _extract_backref_events(
+    result: RippleResult,
+    answer_text: str,
+    graph: GraphDB,
+) -> tuple[list, list[str]]:
+    """从涟漪结果和专家答案中提取回指事件"""
+    from .alias_expander import BackrefEvent
+
+    events = []
+    unmatched = []
+    active_labels = set(result.activated.keys())
+
+    # 从答案中提取关键词
+    keywords = _extract_keywords_v2(answer_text, graph)
+
+    for kw, _ in keywords:
+        if kw in active_labels:
+            continue  # 已匹配种子，跳过
+
+        # 检查是否通过别名匹配到种子
+        seed = graph.get_seed(kw)
+        if seed and seed['label'] in active_labels:
+            # 回指事件：kw → seed_label
+            events.append(BackrefEvent(source_keyword=kw, target_seed=seed['label']))
+        else:
+            # 未匹配关键词
+            unmatched.append(kw)
+
+    return events, unmatched
+
+
+def _extract_unmatched_keywords(
+    result: RippleResult,
+    answer_text: str | None,
+    graph: GraphDB,
+) -> list[str]:
+    """从查询结果中提取未匹配关键词"""
+    if not answer_text:
+        return []
+
+    active_labels = set(result.activated.keys())
+    keywords = _extract_keywords_v2(answer_text, graph)
+
+    unmatched = []
+    for kw, _ in keywords:
+        if len(kw) < MIN_KEYWORD_LENGTH:
+            continue
+        if kw in active_labels:
+            continue
+        # 检查是否通过别名匹配到种子
+        seed = graph.get_seed(kw)
+        if seed:
+            continue  # 已通过别名关联
+        unmatched.append(kw)
+
+    return unmatched
+
+
+def _post_karma_phase4(
+    result: RippleResult,
+    graph: GraphDB,
+    verify_result: dict,
+) -> None:
+    """Phase 4 后处理：元种子指标更新 + 目标触及
+
+    在熏习完成后执行，不阻塞查询响应。
+    异常时仅记录 WARNING 日志，不影响查询结果。
+    """
+    from .config import META_SEED_ENABLED, COGNITIVE_GOAL_ENABLED
+
+    if not META_SEED_ENABLED:
+        return
+
+    try:
+        from .meta_seed import MetaSeedManager
+        mgr = MetaSeedManager(graph)
+
+        karma_direction = verify_result.get('karma_direction', 0)
+        expert_domain = verify_result.get('expert_domain')
+
+        # 1. 更新领域元种子 conflict_frequency
+        if expert_domain and karma_direction == -1:
+            meta_label = f"meta:{expert_domain}"
+            mgr.increment_metric(meta_label, "conflict_frequency", delta=1)
+
+        # 2. [Phase 5 新增] 更新认知目标触及时间
+        if COGNITIVE_GOAL_ENABLED and expert_domain:
+            try:
+                from .cognitive_goal import CognitiveGoalManager
+                goal_mgr = CognitiveGoalManager(graph)
+                goal_mgr.touch_goal_domain(expert_domain)
+            except Exception as e:
+                log.warning("目标触及更新失败: %s", e)
+
+    except Exception as e:
+        log.warning("元种子指标更新失败: %s", e)
+
+
+def _post_karma_phase6(
+    result: RippleResult,
+    graph: GraphDB,
+    verify_result: dict,
+) -> None:
+    """Phase 6 后处理：概念种子激活事件通知 Hebbian 绑定器
+
+    在熏习完成后执行，不阻塞查询响应。
+    异常时仅记录 WARNING 日志，不影响查询结果。
+
+    注意: 概念激活事件通过 api.py 中的 _perception_manager 单例转发，
+    不写入 perception_events 表（该表仅用于感知激活事件）。
+    """
+    from .config import PERCEPTION_ENABLED
+
+    if not PERCEPTION_ENABLED:
+        return
+
+    try:
+        # 获取激活的概念种子列表
+        activated_seeds = list(result.activated.keys())
+        if not activated_seeds:
+            return
+
+        # 构造概念种子激活事件
+        from .perception import ConceptActivationEvent
+        from datetime import datetime, timezone
+        now = datetime.now(timezone.utc).isoformat(timespec='milliseconds')
+
+        event = ConceptActivationEvent(
+            activated_seeds=activated_seeds,
+            timestamp=now,
+        )
+
+        # 通过模块级变量间接通知 PerceptionManager
+        # 在 api.py 的 query_endpoint 中，熏习完成后会调用此函数，
+        # 而 api.py 持有 _perception_manager 单例，可以在那里转发事件
+        # 此处将事件暂存到 verify_result 中，由 api.py 转发
+        verify_result["_concept_activation_event"] = event
+
+    except Exception as e:
+        log.warning("Phase 6 后处理失败: %s", e)

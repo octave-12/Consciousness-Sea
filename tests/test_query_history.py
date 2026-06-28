@@ -74,6 +74,7 @@ class TestEnsureHistoryTable:
         expected = {
             'query_id', 'query_text', 'matched_seeds_count',
             'selected_domains', 'confidence', 'karma_direction', 'created_at',
+            'user_id',  # M-7: user_id 列
         }
         assert expected.issubset(columns)
 
@@ -262,6 +263,7 @@ class TestGetHistory:
         assert 'confidence' in record
         assert 'karma_direction' in record
         assert 'created_at' in record
+        assert 'user_id' in record  # M-7: user_id 字段
 
 
 class TestQueryTextTruncation:
