@@ -17,11 +17,13 @@ from __future__ import annotations
 import logging
 import sqlite3
 import sys
-import os
+import pathlib
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_root = pathlib.Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(_root))
+sys.path.insert(0, str(_root / "backend" / "src"))
 
-from core.expert_reliability import ExpertReliabilityStore, DEFAULT_RELIABILITY
+from consciousness_sea.expert.expert_reliability import ExpertReliabilityStore, DEFAULT_RELIABILITY
 
 
 class TestExpertReliabilityStoreInit:
@@ -213,7 +215,7 @@ class TestExpertReliabilityStoreUpdate:
             handler = logging.Handler()
             records = []
             handler.emit = records.append
-            logger = logging.getLogger("core.expert_reliability")
+            logger = logging.getLogger("consciousness_sea.expert.expert_reliability")
             logger.addHandler(handler)
             try:
                 yield records

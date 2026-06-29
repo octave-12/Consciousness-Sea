@@ -13,13 +13,15 @@
 import json
 import sqlite3
 import sys
-import os
+import pathlib
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_root = pathlib.Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(_root))
+sys.path.insert(0, str(_root / "backend" / "src"))
 
-from core.connection_pool import ConnectionPool
-from core.observer import Observer, StatusData, SeedRankItem, KarmaRankItem, QueryRecord
-from core.config import KARMA_ALERT_THRESHOLD
+from consciousness_sea.infrastructure.connection_pool import ConnectionPool
+from consciousness_sea.infrastructure.observer import Observer, StatusData, SeedRankItem, KarmaRankItem, QueryRecord
+from consciousness_sea.infrastructure.config import KARMA_ALERT_THRESHOLD
 
 
 def _build_test_db(db_path: str) -> None:

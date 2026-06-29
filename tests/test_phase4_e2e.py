@@ -16,14 +16,21 @@ from __future__ import annotations
 import json
 import sqlite3
 import sys
-import os
+from pathlib import Path
 from unittest.mock import patch, MagicMock
 
 import pytest
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# 确保 backend/src 在 sys.path 中
+_src = str(Path(__file__).resolve().parent.parent / "backend" / "src")
+if _src not in sys.path:
+    sys.path.insert(0, _src)
+# 同时保留项目根目录（tests 中部分 import 依赖它）
+_root = str(Path(__file__).resolve().parent.parent)
+if _root not in sys.path:
+    sys.path.insert(0, _root)
 
-from core.meta_seed import (
+from consciousness_sea.metacognition.meta_seed import (
     MetaSeedManager,
     MetaSeedCategory,
     MetaSeedStatus,
@@ -33,10 +40,10 @@ from core.meta_seed import (
     SELF_BOUNDARY_DEFAULT_METRICS,
     SYSTEM_META_SEEDS,
 )
-from core.guardian_loop import GuardianLoop, GuardianLoopResult
-from core.graph_db import GraphDB
-from core.router import route
-from core.config import (
+from consciousness_sea.metacognition.guardian_loop import GuardianLoop, GuardianLoopResult
+from consciousness_sea.domain.graph_db import GraphDB
+from consciousness_sea.domain.router import route
+from consciousness_sea.infrastructure.config import (
     META_SEED_ENABLED,
     META_KARMA_DELTA_THRESHOLD,
     META_SEED_DORMANT_CYCLES,
@@ -481,7 +488,8 @@ class TestScenario6APIQuery:
     def test_list_meta_seeds_api(self, graph):
         """GET /api/v1/meta-seeds 返回正确格式"""
         from fastapi.testclient import TestClient
-        import api as api_module
+        import consciousness_sea.interfaces.api as api
+        api_module = sys.modules['consciousness_sea.interfaces.api']
 
         # 创建 mock 连接池
         mock_pool = MagicMock()
@@ -494,7 +502,7 @@ class TestScenario6APIQuery:
         api_module._guardian_loop = guardian_loop
 
         # 创建 mock Observer
-        from core.observer import Observer, StatusData
+        from consciousness_sea.infrastructure.observer import Observer, StatusData
         mock_observer = MagicMock(spec=Observer)
         mock_status = StatusData(
             total_seeds=10, total_karma_edges=5,
@@ -509,7 +517,7 @@ class TestScenario6APIQuery:
         mgr.generate_domain_monitors()
         mgr.generate_system_monitors()
 
-        with patch("api.META_SEED_ENABLED", True):
+        with patch("consciousness_sea.interfaces.api.META_SEED_ENABLED", True):
             client = TestClient(api_module.app)
             response = client.get("/api/v1/meta-seeds")
 
@@ -532,7 +540,8 @@ class TestScenario6APIQuery:
     def test_guardian_status_api(self, graph):
         """GET /api/v1/guardian/status 返回守护循环状态"""
         from fastapi.testclient import TestClient
-        import api as api_module
+        import consciousness_sea.interfaces.api as api
+        api_module = sys.modules['consciousness_sea.interfaces.api']
 
         mock_pool = MagicMock()
         mock_pool.acquire.return_value = graph
@@ -542,7 +551,7 @@ class TestScenario6APIQuery:
         api_module._pool = mock_pool
         api_module._guardian_loop = guardian_loop
 
-        with patch("api.META_SEED_ENABLED", True):
+        with patch("consciousness_sea.interfaces.api.META_SEED_ENABLED", True):
             client = TestClient(api_module.app)
             response = client.get("/api/v1/guardian/status")
 
@@ -557,7 +566,8 @@ class TestScenario6APIQuery:
     def test_trigger_guardian_api(self, graph):
         """POST /api/v1/guardian/trigger 立即执行"""
         from fastapi.testclient import TestClient
-        import api as api_module
+        import consciousness_sea.interfaces.api as api
+        api_module = sys.modules['consciousness_sea.interfaces.api']
 
         mock_pool = MagicMock()
         mock_pool.acquire.return_value = graph
@@ -567,7 +577,7 @@ class TestScenario6APIQuery:
         api_module._pool = mock_pool
         api_module._guardian_loop = guardian_loop
 
-        with patch("api.META_SEED_ENABLED", True):
+        with patch("consciousness_sea.interfaces.api.META_SEED_ENABLED", True):
             client = TestClient(api_module.app)
             response = client.post("/api/v1/guardian/trigger")
 
@@ -635,7 +645,7 @@ class TestScenario7DormantAndRetired:
 
     def test_functional_degradation(self, graph):
         """功能降级兼容性：META_SEED_ENABLED=False 时行为与 Phase 3 一致"""
-        with patch("core.meta_seed.META_SEED_ENABLED", False):
+        with patch("consciousness_sea.metacognition.meta_seed.META_SEED_ENABLED", False):
             mgr = MetaSeedManager(graph)
 
             # 所有生成方法返回 0

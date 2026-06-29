@@ -17,18 +17,20 @@ from __future__ import annotations
 import json
 import sqlite3
 import sys
-import os
+import pathlib
 import time
 from unittest.mock import patch
 
 import pytest
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_root = pathlib.Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(_root))
+sys.path.insert(0, str(_root / "backend" / "src"))
 
-from core.guardian_loop import GuardianLoop, GuardianLoopResult, GuardianLoopStatus
-from core.meta_seed import MetaSeedManager, MetaSeedCategory, MetaSeedStatus
-from core.graph_db import GraphDB
-from core.config import (
+from consciousness_sea.metacognition.guardian_loop import GuardianLoop, GuardianLoopResult, GuardianLoopStatus
+from consciousness_sea.metacognition.meta_seed import MetaSeedManager, MetaSeedCategory, MetaSeedStatus
+from consciousness_sea.domain.graph_db import GraphDB
+from consciousness_sea.infrastructure.config import (
     META_SEED_ENABLED,
     GUARDIAN_LOOP_INTERVAL,
     GUARDIAN_LOOP_TIMEOUT,
@@ -174,7 +176,7 @@ class TestGuardianLoopControl:
 
     def test_start_creates_daemon_thread(self, guardian):
         """启动守护线程：daemon 线程，名称 'guardian-loop'"""
-        with patch("core.guardian_loop.GUARDIAN_LOOP_INITIAL_DELAY", 0.01):
+        with patch("consciousness_sea.metacognition.guardian_loop.GUARDIAN_LOOP_INITIAL_DELAY", 0.01):
             guardian.start()
             try:
                 assert guardian._daemon_thread is not None
@@ -186,7 +188,7 @@ class TestGuardianLoopControl:
 
     def test_start_idempotent(self, guardian):
         """守护循环已在运行时不重复启动"""
-        with patch("core.guardian_loop.GUARDIAN_LOOP_INITIAL_DELAY", 0.01):
+        with patch("consciousness_sea.metacognition.guardian_loop.GUARDIAN_LOOP_INITIAL_DELAY", 0.01):
             guardian.start()
             try:
                 thread1 = guardian._daemon_thread
@@ -198,7 +200,7 @@ class TestGuardianLoopControl:
 
     def test_stop_terminates_thread(self, guardian):
         """停止守护线程"""
-        with patch("core.guardian_loop.GUARDIAN_LOOP_INITIAL_DELAY", 0.01):
+        with patch("consciousness_sea.metacognition.guardian_loop.GUARDIAN_LOOP_INITIAL_DELAY", 0.01):
             guardian.start()
             assert guardian._daemon_thread is not None
             assert guardian._daemon_thread.is_alive()
@@ -241,7 +243,7 @@ class TestGuardianExecuteOnce:
 
     def test_execute_once_disabled(self, guardian, graph):
         """META_SEED_ENABLED=False 时返回空结果"""
-        with patch("core.guardian_loop.META_SEED_ENABLED", False):
+        with patch("consciousness_sea.metacognition.guardian_loop.META_SEED_ENABLED", False):
             result = guardian.execute_once()
             assert result.success is True
             assert result.meta_seeds_updated == 0
@@ -249,7 +251,7 @@ class TestGuardianExecuteOnce:
     def test_execute_once_logs_result(self, guardian, graph):
         """单次执行记录 INFO 日志"""
         import logging
-        with patch("core.guardian_loop.log") as mock_log:
+        with patch("consciousness_sea.metacognition.guardian_loop.log") as mock_log:
             result = guardian.execute_once()
             if result.success:
                 mock_log.info.assert_called()

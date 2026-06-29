@@ -11,16 +11,18 @@ Phase 2 提炼池测试 (T6.2)
 
 import sqlite3
 import sys
-import os
+import pathlib
 import json
 from pathlib import Path
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_root = pathlib.Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(_root))
+sys.path.insert(0, str(_root / "backend" / "src"))
 
-from core.graph_db import GraphDB
-from core.distillation_pool import DistillationPool
-from core.karma_cleaner import KarmaCleaner
-from core.connection_pool import ConnectionPool
+from consciousness_sea.domain.graph_db import GraphDB
+from consciousness_sea.learning.distillation_pool import DistillationPool
+from consciousness_sea.infrastructure.karma_cleaner import KarmaCleaner
+from consciousness_sea.infrastructure.connection_pool import ConnectionPool
 
 
 def _build_test_db(db_path: str) -> None:
@@ -306,7 +308,7 @@ class TestDistillationUpgrade:
         # 验证全局业力边已创建
         edge = graph.get_edge('感冒', '头痛', 'RELATED')
         assert edge is not None
-        from core.config import DISTILLATION_INITIAL_WEIGHT
+        from consciousness_sea.infrastructure.config import DISTILLATION_INITIAL_WEIGHT
         assert edge['weight'] >= DISTILLATION_INITIAL_WEIGHT
 
         graph.close()

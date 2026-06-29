@@ -11,12 +11,14 @@
 
 import sqlite3
 import sys
-import os
+import pathlib
 from unittest.mock import patch
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_root = pathlib.Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(_root))
+sys.path.insert(0, str(_root / "backend" / "src"))
 
-from core.query_history import (
+from consciousness_sea.domain.query_history import (
     ensure_history_table,
     record_query,
     get_history,

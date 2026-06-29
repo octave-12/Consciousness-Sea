@@ -21,15 +21,17 @@ from __future__ import annotations
 
 import sqlite3
 import sys
-import os
+import pathlib
 from datetime import datetime, timezone
 from unittest.mock import patch, MagicMock
 
 import pytest
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_root = pathlib.Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(_root))
+sys.path.insert(0, str(_root / "backend" / "src"))
 
-from core.perception import (
+from consciousness_sea.perception.perception import (
     PerceptionManager,
     PerceptionChannel,
     PerceptualSeedStatus,
@@ -38,8 +40,8 @@ from core.perception import (
     ChannelStatus,
     PerceptionManagerStatus,
 )
-from core.graph_db import GraphDB
-from core.config import PERCEPTION_ENABLED
+from consciousness_sea.domain.graph_db import GraphDB
+from consciousness_sea.infrastructure.config import PERCEPTION_ENABLED
 
 
 # ═══════════════════════════════════════════════════════════
@@ -244,12 +246,12 @@ class TestPerceptionManagerStartStop:
 
     def test_start_generates_seeds(self, pm, graph):
         """start() 生成预设感知元种子"""
-        with patch("core.perception.PERCEPTION_ENABLED", True), \
-             patch("core.visual_anchor.VisualAnchor") as MockVA, \
-             patch("core.audio_anchor.AudioAnchor") as MockAA, \
-             patch("core.somatic_anchor.SomaticAnchor") as MockSA, \
-             patch("core.hebbian_binder.HebbianBinder") as MockHB, \
-             patch("core.multimodal_aligner.MultimodalAligner") as MockMA:
+        with patch("consciousness_sea.perception.perception.PERCEPTION_ENABLED", True), \
+             patch("consciousness_sea.perception.visual_anchor.VisualAnchor") as MockVA, \
+             patch("consciousness_sea.perception.audio_anchor.AudioAnchor") as MockAA, \
+             patch("consciousness_sea.perception.somatic_anchor.SomaticAnchor") as MockSA, \
+             patch("consciousness_sea.perception.hebbian_binder.HebbianBinder") as MockHB, \
+             patch("consciousness_sea.perception.multimodal_aligner.MultimodalAligner") as MockMA:
             MockVA.return_value._mock_mode = True
             MockAA.return_value._mock_mode = True
             pm.start()
@@ -268,7 +270,7 @@ class TestPerceptionManagerStartStop:
 
     def test_start_disabled(self, pm, graph):
         """PERCEPTION_ENABLED=False 时 start() 不执行任何操作"""
-        with patch("core.perception.PERCEPTION_ENABLED", False):
+        with patch("consciousness_sea.perception.perception.PERCEPTION_ENABLED", False):
             pm.start()
 
         count = graph.conn.execute(
@@ -278,12 +280,12 @@ class TestPerceptionManagerStartStop:
 
     def test_stop(self, pm, graph):
         """stop() 优雅停止所有组件"""
-        with patch("core.perception.PERCEPTION_ENABLED", True), \
-             patch("core.visual_anchor.VisualAnchor") as MockVA, \
-             patch("core.audio_anchor.AudioAnchor") as MockAA, \
-             patch("core.somatic_anchor.SomaticAnchor") as MockSA, \
-             patch("core.hebbian_binder.HebbianBinder") as MockHB, \
-             patch("core.multimodal_aligner.MultimodalAligner") as MockMA:
+        with patch("consciousness_sea.perception.perception.PERCEPTION_ENABLED", True), \
+             patch("consciousness_sea.perception.visual_anchor.VisualAnchor") as MockVA, \
+             patch("consciousness_sea.perception.audio_anchor.AudioAnchor") as MockAA, \
+             patch("consciousness_sea.perception.somatic_anchor.SomaticAnchor") as MockSA, \
+             patch("consciousness_sea.perception.hebbian_binder.HebbianBinder") as MockHB, \
+             patch("consciousness_sea.perception.multimodal_aligner.MultimodalAligner") as MockMA:
             MockVA.return_value._mock_mode = True
             MockAA.return_value._mock_mode = True
             pm.start()
@@ -297,8 +299,8 @@ class TestChannelControl:
 
     def test_start_channel_visual(self, pm, graph):
         """start_channel('visual') 启动视觉通道"""
-        with patch("core.visual_anchor.VisualAnchor") as MockVA, \
-             patch("core.perception.PERCEPTION_ENABLED", True):
+        with patch("consciousness_sea.perception.visual_anchor.VisualAnchor") as MockVA, \
+             patch("consciousness_sea.perception.perception.PERCEPTION_ENABLED", True):
             MockVA.return_value._mock_mode = True
             result = pm.start_channel("visual")
         assert result is True
@@ -306,14 +308,14 @@ class TestChannelControl:
 
     def test_start_channel_unknown(self, pm, graph):
         """start_channel('unknown') 返回 False"""
-        with patch("core.perception.PERCEPTION_ENABLED", True):
+        with patch("consciousness_sea.perception.perception.PERCEPTION_ENABLED", True):
             result = pm.start_channel("olfactory")
         assert result is False
 
     def test_stop_channel(self, pm, graph):
         """stop_channel('visual') 停止视觉通道"""
-        with patch("core.visual_anchor.VisualAnchor") as MockVA, \
-             patch("core.perception.PERCEPTION_ENABLED", True):
+        with patch("consciousness_sea.perception.visual_anchor.VisualAnchor") as MockVA, \
+             patch("consciousness_sea.perception.perception.PERCEPTION_ENABLED", True):
             MockVA.return_value._mock_mode = True
             pm.start_channel("visual")
             result = pm.stop_channel("visual")
@@ -327,7 +329,7 @@ class TestChannelControl:
 
     def test_start_channel_disabled(self, pm, graph):
         """PERCEPTION_ENABLED=False 时 start_channel 返回 False"""
-        with patch("core.perception.PERCEPTION_ENABLED", False):
+        with patch("consciousness_sea.perception.perception.PERCEPTION_ENABLED", False):
             result = pm.start_channel("visual")
         assert result is False
 
@@ -539,8 +541,8 @@ class TestHardwareDegradation:
 
     def test_visual_channel_unavailable(self, pm, graph):
         """视觉通道启动失败时进入 disabled 状态"""
-        with patch("core.visual_anchor.VisualAnchor", side_effect=Exception("camera not found")), \
-             patch("core.perception.PERCEPTION_ENABLED", True):
+        with patch("consciousness_sea.perception.visual_anchor.VisualAnchor", side_effect=Exception("camera not found")), \
+             patch("consciousness_sea.perception.perception.PERCEPTION_ENABLED", True):
             result = pm._start_visual_channel()
         assert result is False
         assert pm._channel_status["visual"].running is False

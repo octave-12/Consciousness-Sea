@@ -12,16 +12,18 @@ from __future__ import annotations
 
 import sqlite3
 import sys
-import os
+import pathlib
 from unittest.mock import patch
 
 import pytest
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_root = pathlib.Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(_root))
+sys.path.insert(0, str(_root / "backend" / "src"))
 
-from core.cold_start import ColdStartManager, ColdStartState
-from core.graph_db import GraphDB
-from core.config import COLD_START_ENABLED, COLD_START_QUERIES, KARMA_MAX_PAIRS
+from consciousness_sea.learning.cold_start import ColdStartManager, ColdStartState
+from consciousness_sea.domain.graph_db import GraphDB
+from consciousness_sea.infrastructure.config import COLD_START_ENABLED, COLD_START_QUERIES, KARMA_MAX_PAIRS
 
 
 # ═══════════════════════════════════════════════════════════
@@ -163,7 +165,7 @@ class TestColdStartManager:
 
     def test_disabled(self, cold_manager, graph):
         """COLD_START_ENABLED=False 时 cold_factor=1.0"""
-        with patch("core.cold_start.COLD_START_ENABLED", False):
+        with patch("consciousness_sea.learning.cold_start.COLD_START_ENABLED", False):
             factor = cold_manager.get_cold_factor("user_001")
             assert factor == 1.0
 

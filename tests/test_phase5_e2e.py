@@ -16,29 +16,36 @@ from __future__ import annotations
 import json
 import sqlite3
 import sys
-import os
+from pathlib import Path
 from datetime import datetime, timezone, timedelta
 from unittest.mock import patch, MagicMock
 
 import pytest
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# 确保 backend/src 在 sys.path 中
+_src = str(Path(__file__).resolve().parent.parent / "backend" / "src")
+if _src not in sys.path:
+    sys.path.insert(0, _src)
+# 同时保留项目根目录
+_root = str(Path(__file__).resolve().parent.parent)
+if _root not in sys.path:
+    sys.path.insert(0, _root)
 
-from core.cognitive_goal import (
+from consciousness_sea.metacognition.cognitive_goal import (
     CognitiveGoalManager,
     CognitiveGoalData,
     GoalType,
     GoalStatus,
 )
-from core.curiosity_engine import (
+from consciousness_sea.metacognition.curiosity_engine import (
     CuriosityEngine,
     ExplorationResult,
     CuriosityEngineStatus,
 )
-from core.guardian_loop import GuardianLoop, GuardianLoopResult
-from core.graph_db import GraphDB
-from core.router import route
-from core.config import (
+from consciousness_sea.metacognition.guardian_loop import GuardianLoop, GuardianLoopResult
+from consciousness_sea.domain.graph_db import GraphDB
+from consciousness_sea.domain.router import route
+from consciousness_sea.infrastructure.config import (
     COGNITIVE_GOAL_ENABLED,
     CURIOSITY_ENGINE_ENABLED,
     GOAL_LOW_CONF_THRESHOLD,
@@ -393,7 +400,7 @@ class TestScenario2CuriosityStrategies:
         mgr = CognitiveGoalManager(graph)
         engine = CuriosityEngine(graph, mgr)
 
-        with patch("core.curiosity_engine.EXTERNAL_QUERY_ENABLED", True):
+        with patch("consciousness_sea.metacognition.curiosity_engine.EXTERNAL_QUERY_ENABLED", True):
             strategy = engine._determine_strategy("完全不存在的领域")
         assert strategy == "external"
 
@@ -402,7 +409,7 @@ class TestScenario2CuriosityStrategies:
         mgr = CognitiveGoalManager(graph)
         engine = CuriosityEngine(graph, mgr)
 
-        with patch("core.curiosity_engine.EXTERNAL_QUERY_ENABLED", False):
+        with patch("consciousness_sea.metacognition.curiosity_engine.EXTERNAL_QUERY_ENABLED", False):
             strategy = engine._determine_strategy("完全不存在的领域")
         assert strategy == "none"
 
@@ -456,7 +463,7 @@ class TestScenario3GuardianLoop7Steps:
              "conflict_frequency": 100},
         )
 
-        with patch("core.guardian_loop.COGNITIVE_GOAL_ENABLED", False):
+        with patch("consciousness_sea.metacognition.guardian_loop.COGNITIVE_GOAL_ENABLED", False):
             guardian = GuardianLoop(graph)
             result = guardian.execute_once()
             assert result.success is True
@@ -490,7 +497,7 @@ class TestScenario4PoolManagement:
         graph.conn.commit()
 
         # 设置池上限为 3，触发淘汰
-        with patch("core.cognitive_goal.GOAL_POOL_MAX_SIZE", 3):
+        with patch("consciousness_sea.metacognition.cognitive_goal.GOAL_POOL_MAX_SIZE", 3):
             mgr = CognitiveGoalManager(graph)
             cooled = mgr.cool_goals()
 
@@ -591,7 +598,8 @@ class TestScenario6APIQuery:
     def test_list_cognitive_goals_api(self, graph):
         """GET /api/v1/cognitive-goals 返回正确格式"""
         from fastapi.testclient import TestClient
-        import api as api_module
+        import consciousness_sea.interfaces.api as api
+        api_module = sys.modules['consciousness_sea.interfaces.api']
 
         mock_pool = MagicMock()
         mock_pool.acquire.return_value = graph
@@ -607,7 +615,7 @@ class TestScenario6APIQuery:
         api_module._curiosity_engine = curiosity_engine
 
         # 创建 mock Observer
-        from core.observer import Observer, StatusData
+        from consciousness_sea.infrastructure.observer import Observer, StatusData
         mock_observer = MagicMock(spec=Observer)
         mock_status = StatusData(
             total_seeds=8, total_karma_edges=5,
@@ -626,8 +634,8 @@ class TestScenario6APIQuery:
         )
         goal_mgr.generate_goals()
 
-        with patch("api.COGNITIVE_GOAL_ENABLED", True), \
-             patch("api.META_SEED_ENABLED", True):
+        with patch("consciousness_sea.interfaces.api.COGNITIVE_GOAL_ENABLED", True), \
+             patch("consciousness_sea.interfaces.api.META_SEED_ENABLED", True):
             client = TestClient(api_module.app)
             response = client.get("/api/v1/cognitive-goals")
 
@@ -644,7 +652,8 @@ class TestScenario6APIQuery:
     def test_curiosity_status_api(self, graph):
         """GET /api/v1/curiosity/status 返回引擎状态"""
         from fastapi.testclient import TestClient
-        import api as api_module
+        import consciousness_sea.interfaces.api as api
+        api_module = sys.modules['consciousness_sea.interfaces.api']
 
         mock_pool = MagicMock()
         mock_pool.acquire.return_value = graph
@@ -656,7 +665,7 @@ class TestScenario6APIQuery:
         api_module._pool = mock_pool
         api_module._curiosity_engine = curiosity_engine
 
-        with patch("api.CURIOSITY_ENGINE_ENABLED", True):
+        with patch("consciousness_sea.interfaces.api.CURIOSITY_ENGINE_ENABLED", True):
             client = TestClient(api_module.app)
             response = client.get("/api/v1/curiosity/status")
 
@@ -671,7 +680,8 @@ class TestScenario6APIQuery:
     def test_guardian_trigger_api(self, graph):
         """POST /api/v1/guardian/trigger 触发守护循环（含目标生成）"""
         from fastapi.testclient import TestClient
-        import api as api_module
+        import consciousness_sea.interfaces.api as api
+        api_module = sys.modules['consciousness_sea.interfaces.api']
 
         mock_pool = MagicMock()
         mock_pool.acquire.return_value = graph
@@ -682,7 +692,7 @@ class TestScenario6APIQuery:
         api_module._guardian_loop = guardian_loop
 
         # 创建 mock Observer
-        from core.observer import Observer, StatusData
+        from consciousness_sea.infrastructure.observer import Observer, StatusData
         mock_observer = MagicMock(spec=Observer)
         mock_status = StatusData(
             total_seeds=8, total_karma_edges=5,
@@ -692,8 +702,8 @@ class TestScenario6APIQuery:
         mock_observer.get_status.return_value = mock_status
         api_module._observer = mock_observer
 
-        with patch("api.META_SEED_ENABLED", True), \
-             patch("api.COGNITIVE_GOAL_ENABLED", True):
+        with patch("consciousness_sea.interfaces.api.META_SEED_ENABLED", True), \
+             patch("consciousness_sea.interfaces.api.COGNITIVE_GOAL_ENABLED", True):
             client = TestClient(api_module.app)
             response = client.post("/api/v1/guardian/trigger")
 

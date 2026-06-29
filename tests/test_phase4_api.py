@@ -12,21 +12,22 @@ Phase 4 API 端点测试
 from __future__ import annotations
 
 import json
+import pathlib
 import sqlite3
 import sys
-import os
 from unittest.mock import patch, MagicMock
 
 import pytest
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent / 'backend' / 'src'))
 
 from fastapi.testclient import TestClient
 
-from core.graph_db import GraphDB
-from core.meta_seed import MetaSeedManager, MetaSeedCategory, MetaSeedStatus
-from core.guardian_loop import GuardianLoop, GuardianLoopResult, GuardianLoopStatus
-from core.config import META_SEED_ENABLED
+from consciousness_sea.domain.graph_db import GraphDB
+from consciousness_sea.metacognition.meta_seed import MetaSeedManager, MetaSeedCategory, MetaSeedStatus
+from consciousness_sea.metacognition.guardian_loop import GuardianLoop, GuardianLoopResult, GuardianLoopStatus
+from consciousness_sea.infrastructure.config import META_SEED_ENABLED
 
 
 # ═══════════════════════════════════════════════════════════
@@ -141,7 +142,8 @@ def graph():
 @pytest.fixture
 def client(graph):
     """创建 TestClient，注入 mock 的连接池和 GuardianLoop"""
-    import api as api_module
+    import consciousness_sea.interfaces.api as api  # 触发 api.app 模块导入
+    api_module = sys.modules['consciousness_sea.interfaces.api']
 
     # 创建 mock 连接池
     mock_pool = MagicMock()
@@ -158,12 +160,12 @@ def client(graph):
     # 创建 GuardianLoop
     guardian_loop = GuardianLoop(graph)
 
-    # 注入到 api 模块
+    # 注入到 api.app 模块（直接修改模块级变量）
     api_module._pool = mock_pool
     api_module._guardian_loop = guardian_loop
 
     # 创建 mock Observer
-    from core.observer import Observer, StatusData
+    from consciousness_sea.infrastructure.observer import Observer, StatusData
     mock_observer = MagicMock(spec=Observer)
     mock_status = StatusData(
         total_seeds=3,
@@ -188,7 +190,7 @@ def client(graph):
     api_module._user_manager = mock_user_mgr
 
     # 确保 META_SEED_ENABLED
-    with patch("api.META_SEED_ENABLED", True):
+    with patch("consciousness_sea.interfaces.api.META_SEED_ENABLED", True):
         client = TestClient(api_module.app)
         yield client
 
@@ -213,7 +215,7 @@ class TestMetaSeedsAPI:
         mgr.generate_domain_monitors()
         mgr.generate_system_monitors()
 
-        with patch("api.META_SEED_ENABLED", True):
+        with patch("consciousness_sea.interfaces.api.META_SEED_ENABLED", True):
             response = client.get("/api/v1/meta-seeds")
 
         assert response.status_code == 200
@@ -235,7 +237,7 @@ class TestMetaSeedsAPI:
         mgr.generate_domain_monitors()
         mgr.generate_system_monitors()
 
-        with patch("api.META_SEED_ENABLED", True):
+        with patch("consciousness_sea.interfaces.api.META_SEED_ENABLED", True):
             response = client.get("/api/v1/meta-seeds?category=domain_monitor")
 
         assert response.status_code == 200
@@ -248,7 +250,7 @@ class TestMetaSeedsAPI:
         mgr = MetaSeedManager(graph)
         mgr.generate_domain_monitors()
 
-        with patch("api.META_SEED_ENABLED", True):
+        with patch("consciousness_sea.interfaces.api.META_SEED_ENABLED", True):
             response = client.get("/api/v1/meta-seeds/meta:医学")
 
         assert response.status_code == 200
@@ -260,7 +262,7 @@ class TestMetaSeedsAPI:
 
     def test_get_meta_seed_not_found(self, client, graph):
         """GET /api/v1/meta-seeds/{label} 元种子不存在时返回 404"""
-        with patch("api.META_SEED_ENABLED", True):
+        with patch("consciousness_sea.interfaces.api.META_SEED_ENABLED", True):
             response = client.get("/api/v1/meta-seeds/meta:不存在")
 
         assert response.status_code == 404
@@ -271,7 +273,7 @@ class TestGuardianAPI:
 
     def test_guardian_status(self, client, graph):
         """GET /api/v1/guardian/status 返回守护循环状态"""
-        with patch("api.META_SEED_ENABLED", True):
+        with patch("consciousness_sea.interfaces.api.META_SEED_ENABLED", True):
             response = client.get("/api/v1/guardian/status")
 
         assert response.status_code == 200
@@ -284,7 +286,7 @@ class TestGuardianAPI:
 
     def test_trigger_guardian(self, client, graph):
         """POST /api/v1/guardian/trigger 执行一次守护循环"""
-        with patch("api.META_SEED_ENABLED", True):
+        with patch("consciousness_sea.interfaces.api.META_SEED_ENABLED", True):
             response = client.post("/api/v1/guardian/trigger")
 
         assert response.status_code == 200
@@ -296,13 +298,13 @@ class TestGuardianAPI:
 
     def test_trigger_guardian_conflict(self, client, graph):
         """POST /api/v1/guardian/trigger 守护循环正在执行时返回 409"""
-        import api as api_module
+        api_module = sys.modules['consciousness_sea.interfaces.api']
         guardian = api_module._guardian_loop
 
         # 模拟正在执行
         guardian._is_executing = True
         try:
-            with patch("api.META_SEED_ENABLED", True):
+            with patch("consciousness_sea.interfaces.api.META_SEED_ENABLED", True):
                 response = client.post("/api/v1/guardian/trigger")
             assert response.status_code == 409
         finally:
@@ -310,10 +312,10 @@ class TestGuardianAPI:
 
     def test_guardian_status_disabled(self, client, graph):
         """META_SEED_ENABLED=False 时守护循环状态返回默认值"""
-        import api as api_module
+        api_module = sys.modules['consciousness_sea.interfaces.api']
         api_module._guardian_loop = None
 
-        with patch("api.META_SEED_ENABLED", False):
+        with patch("consciousness_sea.interfaces.api.META_SEED_ENABLED", False):
             response = client.get("/api/v1/guardian/status")
 
         assert response.status_code == 200
@@ -329,7 +331,7 @@ class TestStatusExtension:
 
     def test_status_contains_meta_seeds_field(self, client, graph):
         """/status 响应包含 meta_seeds 字段"""
-        with patch("api.META_SEED_ENABLED", True):
+        with patch("consciousness_sea.interfaces.api.META_SEED_ENABLED", True):
             response = client.get("/status")
 
         assert response.status_code == 200

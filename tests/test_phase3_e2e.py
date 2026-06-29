@@ -16,21 +16,23 @@ from __future__ import annotations
 import json
 import sqlite3
 import sys
-import os
+import pathlib
 import time
 from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_root = pathlib.Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(_root))
+sys.path.insert(0, str(_root / "backend" / "src"))
 
-from core.alias_expander import AliasExpander, BackrefEvent, BackrefStatus
-from core.seed_candidate import SeedCandidateManager, CandidateStatus
-from core.cold_start import ColdStartManager
-from core.checkpoint import CheckpointManager, CheckpointSource
-from core.graph_db import GraphDB
-from core.config import (
+from consciousness_sea.learning.alias_expander import AliasExpander, BackrefEvent, BackrefStatus
+from consciousness_sea.learning.seed_candidate import SeedCandidateManager, CandidateStatus
+from consciousness_sea.learning.cold_start import ColdStartManager
+from consciousness_sea.learning.checkpoint import CheckpointManager, CheckpointSource
+from consciousness_sea.domain.graph_db import GraphDB
+from consciousness_sea.infrastructure.config import (
     ALIAS_AUTO_EXTEND,
     ALIAS_BACK_REF_THRESHOLD,
     ALIAS_CONFLICT_MARGIN,
@@ -499,9 +501,9 @@ class TestScenario7DegradationCompat:
         cold_mgr = ColdStartManager(graph)
 
         with (
-            patch("core.alias_expander.ALIAS_AUTO_EXTEND", False),
-            patch("core.seed_candidate.CANDIDATE_SEED_AUTO_CREATE", False),
-            patch("core.cold_start.COLD_START_ENABLED", False),
+            patch("consciousness_sea.learning.alias_expander.ALIAS_AUTO_EXTEND", False),
+            patch("consciousness_sea.learning.seed_candidate.CANDIDATE_SEED_AUTO_CREATE", False),
+            patch("consciousness_sea.learning.cold_start.COLD_START_ENABLED", False),
         ):
             # 1. 别名扩展：仅记录统计，不修改 seeds 表
             for _ in range(10):
@@ -536,7 +538,7 @@ class TestScenario7DegradationCompat:
         """别名扩展禁用时，统计仍被记录"""
         expander = AliasExpander(graph)
 
-        with patch("core.alias_expander.ALIAS_AUTO_EXTEND", False):
+        with patch("consciousness_sea.learning.alias_expander.ALIAS_AUTO_EXTEND", False):
             expander.record_backref_events(
                 [BackrefEvent(source_keyword="着凉", target_seed="感冒")]
             )
@@ -553,7 +555,7 @@ class TestScenario7DegradationCompat:
         """冷启动禁用时，increment_query_count 仍正常工作"""
         cold_mgr = ColdStartManager(graph)
 
-        with patch("core.cold_start.COLD_START_ENABLED", False):
+        with patch("consciousness_sea.learning.cold_start.COLD_START_ENABLED", False):
             count = cold_mgr.increment_query_count("user_001")
             assert count == 1
 

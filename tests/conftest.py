@@ -8,17 +8,19 @@ from __future__ import annotations
 
 import sqlite3
 import sys
-import os
+import pathlib
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_root = pathlib.Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(_root))
+sys.path.insert(0, str(_root / "backend" / "src"))
 
-from core.expert_manager import ExpertStatus, InferenceResult
-from core.graph_db import GraphDB
-from core.router import RippleResult, ActivationNode
+from consciousness_sea.expert.expert_manager import ExpertStatus, InferenceResult
+from consciousness_sea.domain.graph_db import GraphDB
+from consciousness_sea.domain.router import RippleResult, ActivationNode
 
 
 # ═══════════════════════════════════════════════════════════

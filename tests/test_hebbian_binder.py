@@ -19,18 +19,20 @@ from __future__ import annotations
 
 import sqlite3
 import sys
-import os
+import pathlib
 from datetime import datetime, timezone
 from unittest.mock import patch
 
 import pytest
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_root = pathlib.Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(_root))
+sys.path.insert(0, str(_root / "backend" / "src"))
 
-from core.hebbian_binder import HebbianBinder, HebbianBinderStatus
-from core.perception import PerceptActivationEvent, ConceptActivationEvent, PerceptionChannel
-from core.graph_db import GraphDB
-from core.config import (
+from consciousness_sea.perception.hebbian_binder import HebbianBinder, HebbianBinderStatus
+from consciousness_sea.perception.perception import PerceptActivationEvent, ConceptActivationEvent, PerceptionChannel
+from consciousness_sea.domain.graph_db import GraphDB
+from consciousness_sea.infrastructure.config import (
     HEBBIAN_TIME_WINDOW,
     HEBBIAN_LEARNING_RATE,
     HEBBIAN_NEGATIVE_DECAY_ENABLED,
@@ -347,7 +349,7 @@ class TestNegativeDecay:
         now_ts = datetime.now(timezone.utc).isoformat(timespec='milliseconds')
         far_past_ts = "2020-01-01T00:00:00.000+00:00"
 
-        with patch("core.hebbian_binder.HEBBIAN_NEGATIVE_DECAY_ENABLED", True):
+        with patch("consciousness_sea.perception.hebbian_binder.HEBBIAN_NEGATIVE_DECAY_ENABLED", True):
             # percept:visual:red 与"红色"在时间窗口内 → 共同激活
             binder.on_percept_activation(PerceptActivationEvent(
                 perceptual_seed="percept:visual:red",

@@ -18,28 +18,30 @@ from __future__ import annotations
 import json
 import sqlite3
 import sys
-import os
+import pathlib
 from datetime import datetime, timezone
 from unittest.mock import patch, MagicMock
 
 import pytest
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_root = pathlib.Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(_root))
+sys.path.insert(0, str(_root / "backend" / "src"))
 
-from core.curiosity_engine import (
+from consciousness_sea.metacognition.curiosity_engine import (
     CuriosityEngine,
     ExplorationResult,
     CuriosityEngineStatus,
     ExternalQueryResult,
 )
-from core.cognitive_goal import (
+from consciousness_sea.metacognition.cognitive_goal import (
     CognitiveGoalManager,
     CognitiveGoalData,
     GoalType,
     GoalStatus,
 )
-from core.graph_db import GraphDB
-from core.config import (
+from consciousness_sea.domain.graph_db import GraphDB
+from consciousness_sea.infrastructure.config import (
     CURIOSITY_ENGINE_ENABLED,
     CURIOSITY_MAX_CONCURRENT,
     CURIOSITY_ACTIVATION_THRESHOLD,
@@ -303,13 +305,13 @@ class TestStrategyDetermination:
 
     def test_strategy_external_when_enabled(self, engine, graph):
         """完全空白且 EXTERNAL_QUERY_ENABLED=True → external"""
-        with patch("core.curiosity_engine.EXTERNAL_QUERY_ENABLED", True):
+        with patch("consciousness_sea.metacognition.curiosity_engine.EXTERNAL_QUERY_ENABLED", True):
             strategy = engine._determine_strategy("不存在的领域")
         assert strategy == "external"
 
     def test_strategy_none_when_disabled(self, engine, graph):
         """完全空白且 EXTERNAL_QUERY_ENABLED=False → none"""
-        with patch("core.curiosity_engine.EXTERNAL_QUERY_ENABLED", False):
+        with patch("consciousness_sea.metacognition.curiosity_engine.EXTERNAL_QUERY_ENABLED", False):
             strategy = engine._determine_strategy("不存在的领域")
         assert strategy == "none"
 
@@ -323,7 +325,7 @@ class TestExploreEntry:
             goal_id="goal_test", goal_type=GoalType.LOW_CONFIDENCE,
             trigger_condition="test", domain="医学",
         )
-        with patch("core.curiosity_engine.CURIOSITY_ENGINE_ENABLED", False):
+        with patch("consciousness_sea.metacognition.curiosity_engine.CURIOSITY_ENGINE_ENABLED", False):
             result = engine.explore(goal)
         assert result.strategy == "disabled"
         assert result.error is not None
@@ -437,7 +439,7 @@ class TestInternalExploration:
         )
 
         # Mock route 函数（局部导入，需 patch 源模块）
-        from core.router import RippleResult, ActivationNode
+        from consciousness_sea.domain.router import RippleResult, ActivationNode
         mock_result = RippleResult()
         mock_result.activated["感冒"] = ActivationNode(
             label="感冒", activation=0.8, domain="医学", depth=0,
@@ -446,7 +448,7 @@ class TestInternalExploration:
             label="发热", activation=0.6, domain="医学", depth=1,
         )
 
-        with patch("core.router.route", return_value=mock_result):
+        with patch("consciousness_sea.domain.router.route", return_value=mock_result):
             result = engine._explore_internal(goal)
 
         # 验证状态被更新为 exploring（探索过程中）
@@ -461,7 +463,7 @@ class TestInternalExploration:
             trigger_condition="test", domain="文学",
         )
 
-        with patch("core.curiosity_engine.EXTERNAL_QUERY_ENABLED", False):
+        with patch("consciousness_sea.metacognition.curiosity_engine.EXTERNAL_QUERY_ENABLED", False):
             result = engine._explore_internal(goal)
 
         assert result.error is not None
@@ -474,7 +476,7 @@ class TestInternalExploration:
             trigger_condition="test", domain="医学",
         )
 
-        with patch("core.router.route", side_effect=Exception("路由失败")):
+        with patch("consciousness_sea.domain.router.route", side_effect=Exception("路由失败")):
             result = engine._explore_internal(goal)
 
         assert result.error is not None
@@ -492,7 +494,7 @@ class TestCandidateUpgrade:
             trigger_condition="test", domain="医学",
         )
 
-        with patch("core.distillation_pool.DistillationPool") as mock_pool_cls:
+        with patch("consciousness_sea.learning.distillation_pool.DistillationPool") as mock_pool_cls:
             mock_pool = MagicMock()
             mock_pool.try_upgrade_by_domain.return_value = 2
             mock_pool_cls.return_value = mock_pool
@@ -510,7 +512,7 @@ class TestCandidateUpgrade:
             trigger_condition="test", domain="医学",
         )
 
-        with patch("core.distillation_pool.DistillationPool") as mock_pool_cls:
+        with patch("consciousness_sea.learning.distillation_pool.DistillationPool") as mock_pool_cls:
             mock_pool_cls.side_effect = Exception("提炼池不可用")
 
             result = engine._explore_candidate_upgrade(goal)
@@ -529,7 +531,7 @@ class TestExternalQuery:
             trigger_condition="test", domain="文学",
         )
 
-        with patch("core.curiosity_engine.EXTERNAL_QUERY_ENABLED", False):
+        with patch("consciousness_sea.metacognition.curiosity_engine.EXTERNAL_QUERY_ENABLED", False):
             result = engine._explore_external(goal)
 
         assert result.error is not None
@@ -543,13 +545,13 @@ class TestExternalQuery:
             trigger_condition="test", domain="文学",
         )
 
-        with patch("core.curiosity_engine.EXTERNAL_QUERY_ENABLED", True):
+        with patch("consciousness_sea.metacognition.curiosity_engine.EXTERNAL_QUERY_ENABLED", True):
             with patch.object(engine, '_query_external_source') as mock_query:
                 mock_query.return_value = ExternalQueryResult(
                     title="文学理论", summary="文学理论概述",
                     related_terms=["叙事", "修辞"], categories=["文学"],
                 )
-                with patch("core.distillation_pool.DistillationPool") as mock_pool_cls:
+                with patch("consciousness_sea.learning.distillation_pool.DistillationPool") as mock_pool_cls:
                     mock_pool = MagicMock()
                     mock_pool.submit_external_candidate.return_value = 1
                     mock_pool.submit_candidate.return_value = 2
@@ -568,7 +570,7 @@ class TestExternalQuery:
             trigger_condition="test", domain="文学",
         )
 
-        with patch("core.curiosity_engine.EXTERNAL_QUERY_ENABLED", True):
+        with patch("consciousness_sea.metacognition.curiosity_engine.EXTERNAL_QUERY_ENABLED", True):
             with patch.object(engine, '_query_external_source', return_value=None):
                 result = engine._explore_external(goal)
 
@@ -594,9 +596,9 @@ class TestExternalQuery:
                 related_terms=["叙事"], categories=["文学"],
             )
 
-        with patch("core.curiosity_engine.EXTERNAL_QUERY_ENABLED", True):
+        with patch("consciousness_sea.metacognition.curiosity_engine.EXTERNAL_QUERY_ENABLED", True):
             with patch.object(engine, '_query_external_source', side_effect=side_effect):
-                with patch("core.distillation_pool.DistillationPool") as mock_pool_cls:
+                with patch("consciousness_sea.learning.distillation_pool.DistillationPool") as mock_pool_cls:
                     mock_pool = MagicMock()
                     mock_pool.submit_external_candidate.return_value = 1
                     mock_pool.submit_candidate.return_value = 2

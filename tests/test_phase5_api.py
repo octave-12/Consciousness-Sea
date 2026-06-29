@@ -14,23 +14,24 @@ Phase 5 API 端点测试
 from __future__ import annotations
 
 import json
+import pathlib
 import sqlite3
 import sys
-import os
 from datetime import datetime, timezone
 from unittest.mock import patch, MagicMock
 
 import pytest
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent / 'backend' / 'src'))
 
 from fastapi.testclient import TestClient
 
-from core.graph_db import GraphDB
-from core.cognitive_goal import CognitiveGoalManager, GoalType, GoalStatus
-from core.curiosity_engine import CuriosityEngine, CuriosityEngineStatus
-from core.guardian_loop import GuardianLoop
-from core.config import COGNITIVE_GOAL_ENABLED, CURIOSITY_ENGINE_ENABLED
+from consciousness_sea.domain.graph_db import GraphDB
+from consciousness_sea.metacognition.cognitive_goal import CognitiveGoalManager, GoalType, GoalStatus
+from consciousness_sea.metacognition.curiosity_engine import CuriosityEngine, CuriosityEngineStatus
+from consciousness_sea.metacognition.guardian_loop import GuardianLoop
+from consciousness_sea.infrastructure.config import COGNITIVE_GOAL_ENABLED, CURIOSITY_ENGINE_ENABLED
 
 
 # ═══════════════════════════════════════════════════════════
@@ -204,7 +205,8 @@ def graph():
 @pytest.fixture
 def client(graph):
     """创建 TestClient，注入 mock 的连接池和好奇心引擎"""
-    import api as api_module
+    import consciousness_sea.interfaces.api as api  # 触发 api.app 模块导入
+    api_module = sys.modules['consciousness_sea.interfaces.api']
 
     # 创建 mock 连接池
     mock_pool = MagicMock()
@@ -225,14 +227,14 @@ def client(graph):
     goal_mgr = CognitiveGoalManager(graph)
     curiosity_engine = CuriosityEngine(graph, goal_mgr)
 
-    # 注入到 api 模块
+    # 注入到 api.app 模块（直接修改模块级变量）
     api_module._pool = mock_pool
     api_module._guardian_loop = guardian_loop
     api_module._goal_mgr = goal_mgr
     api_module._curiosity_engine = curiosity_engine
 
     # 创建 mock Observer
-    from core.observer import Observer, StatusData
+    from consciousness_sea.infrastructure.observer import Observer, StatusData
     mock_observer = MagicMock(spec=Observer)
     mock_status = StatusData(
         total_seeds=3, total_karma_edges=1,
@@ -250,9 +252,9 @@ def client(graph):
     api_module._session_manager = mock_session_mgr
     api_module._user_manager = mock_user_mgr
 
-    with patch("api.COGNITIVE_GOAL_ENABLED", True), \
-         patch("api.CURIOSITY_ENGINE_ENABLED", True), \
-         patch("api.META_SEED_ENABLED", True):
+    with patch("consciousness_sea.interfaces.api.COGNITIVE_GOAL_ENABLED", True), \
+         patch("consciousness_sea.interfaces.api.CURIOSITY_ENGINE_ENABLED", True), \
+         patch("consciousness_sea.interfaces.api.META_SEED_ENABLED", True):
         tc = TestClient(api_module.app)
         yield tc
 
@@ -291,7 +293,7 @@ class TestCognitiveGoalsAPI:
         """GET /api/v1/cognitive-goals 返回目标列表"""
         _insert_goal_via_api_db(graph)
 
-        with patch("api.COGNITIVE_GOAL_ENABLED", True):
+        with patch("consciousness_sea.interfaces.api.COGNITIVE_GOAL_ENABLED", True):
             response = client.get("/api/v1/cognitive-goals")
 
         assert response.status_code == 200
@@ -312,7 +314,7 @@ class TestCognitiveGoalsAPI:
         _insert_goal_via_api_db(graph, goal_id="goal_pending_api", status="pending")
         _insert_goal_via_api_db(graph, goal_id="goal_completed_api", status="completed", domain="物理")
 
-        with patch("api.COGNITIVE_GOAL_ENABLED", True):
+        with patch("consciousness_sea.interfaces.api.COGNITIVE_GOAL_ENABLED", True):
             response = client.get("/api/v1/cognitive-goals?status=pending")
 
         assert response.status_code == 200
@@ -325,7 +327,7 @@ class TestCognitiveGoalsAPI:
         _insert_goal_via_api_db(graph, goal_id="goal_lc_api", goal_type="low_confidence")
         _insert_goal_via_api_db(graph, goal_id="goal_hc_api", goal_type="high_conflict", domain="物理")
 
-        with patch("api.COGNITIVE_GOAL_ENABLED", True):
+        with patch("consciousness_sea.interfaces.api.COGNITIVE_GOAL_ENABLED", True):
             response = client.get("/api/v1/cognitive-goals?goal_type=low_confidence")
 
         assert response.status_code == 200
@@ -335,14 +337,14 @@ class TestCognitiveGoalsAPI:
 
     def test_list_cognitive_goals_invalid_status(self, client, graph):
         """GET /api/v1/cognitive-goals?status=invalid 返回 422"""
-        with patch("api.COGNITIVE_GOAL_ENABLED", True):
+        with patch("consciousness_sea.interfaces.api.COGNITIVE_GOAL_ENABLED", True):
             response = client.get("/api/v1/cognitive-goals?status=invalid")
 
         assert response.status_code == 422
 
     def test_list_cognitive_goals_disabled(self, client, graph):
         """COGNITIVE_GOAL_ENABLED=False 时返回空列表"""
-        with patch("api.COGNITIVE_GOAL_ENABLED", False):
+        with patch("consciousness_sea.interfaces.api.COGNITIVE_GOAL_ENABLED", False):
             response = client.get("/api/v1/cognitive-goals")
 
         assert response.status_code == 200
@@ -353,7 +355,7 @@ class TestCognitiveGoalsAPI:
         """GET /api/v1/cognitive-goals/{goal_id} 返回详情"""
         _insert_goal_via_api_db(graph, goal_id="goal_detail_api")
 
-        with patch("api.COGNITIVE_GOAL_ENABLED", True):
+        with patch("consciousness_sea.interfaces.api.COGNITIVE_GOAL_ENABLED", True):
             response = client.get("/api/v1/cognitive-goals/goal_detail_api")
 
         assert response.status_code == 200
@@ -367,7 +369,7 @@ class TestCognitiveGoalsAPI:
 
     def test_get_cognitive_goal_not_found(self, client, graph):
         """GET /api/v1/cognitive-goals/{goal_id} 不存在时返回 404"""
-        with patch("api.COGNITIVE_GOAL_ENABLED", True):
+        with patch("consciousness_sea.interfaces.api.COGNITIVE_GOAL_ENABLED", True):
             response = client.get("/api/v1/cognitive-goals/goal_not_exist")
 
         assert response.status_code == 404
@@ -378,7 +380,7 @@ class TestCognitiveGoalsAPI:
         _insert_goal_via_api_db(graph, goal_id="goal_stats_api_2", status="completed",
                                  domain="物理", goal_type="high_conflict")
 
-        with patch("api.COGNITIVE_GOAL_ENABLED", True):
+        with patch("consciousness_sea.interfaces.api.COGNITIVE_GOAL_ENABLED", True):
             response = client.get("/api/v1/cognitive-goals/stats")
 
         assert response.status_code == 200
@@ -390,7 +392,7 @@ class TestCognitiveGoalsAPI:
 
     def test_create_cognitive_goal(self, client, graph):
         """POST /api/v1/cognitive-goals 手动创建目标"""
-        with patch("api.COGNITIVE_GOAL_ENABLED", True):
+        with patch("consciousness_sea.interfaces.api.COGNITIVE_GOAL_ENABLED", True):
             response = client.post(
                 "/api/v1/cognitive-goals",
                 json={
@@ -406,7 +408,7 @@ class TestCognitiveGoalsAPI:
 
     def test_create_cognitive_goal_invalid_type(self, client, graph):
         """POST /api/v1/cognitive-goals 无效 goal_type 返回 400"""
-        with patch("api.COGNITIVE_GOAL_ENABLED", True):
+        with patch("consciousness_sea.interfaces.api.COGNITIVE_GOAL_ENABLED", True):
             response = client.post(
                 "/api/v1/cognitive-goals",
                 json={
@@ -420,7 +422,7 @@ class TestCognitiveGoalsAPI:
 
     def test_create_cognitive_goal_missing_fields(self, client, graph):
         """POST /api/v1/cognitive-goals 缺少必填字段返回 422（Pydantic 校验）"""
-        with patch("api.COGNITIVE_GOAL_ENABLED", True):
+        with patch("consciousness_sea.interfaces.api.COGNITIVE_GOAL_ENABLED", True):
             response = client.post(
                 "/api/v1/cognitive-goals",
                 json={"goal_type": "low_confidence"},
@@ -430,7 +432,7 @@ class TestCognitiveGoalsAPI:
 
     def test_create_cognitive_goal_disabled(self, client, graph):
         """COGNITIVE_GOAL_ENABLED=False 时返回 503"""
-        with patch("api.COGNITIVE_GOAL_ENABLED", False):
+        with patch("consciousness_sea.interfaces.api.COGNITIVE_GOAL_ENABLED", False):
             response = client.post(
                 "/api/v1/cognitive-goals",
                 json={
@@ -448,7 +450,7 @@ class TestCuriosityAPI:
 
     def test_curiosity_status(self, client, graph):
         """GET /api/v1/curiosity/status 返回引擎状态"""
-        with patch("api.CURIOSITY_ENGINE_ENABLED", True):
+        with patch("consciousness_sea.interfaces.api.CURIOSITY_ENGINE_ENABLED", True):
             response = client.get("/api/v1/curiosity/status")
 
         assert response.status_code == 200
@@ -460,11 +462,11 @@ class TestCuriosityAPI:
 
     def test_curiosity_status_disabled(self, client, graph):
         """CURIOSITY_ENGINE_ENABLED=False 时返回默认状态"""
-        import api as api_module
+        api_module = sys.modules['consciousness_sea.interfaces.api']
         original = api_module._curiosity_engine
         api_module._curiosity_engine = None
 
-        with patch("api.CURIOSITY_ENGINE_ENABLED", False):
+        with patch("consciousness_sea.interfaces.api.CURIOSITY_ENGINE_ENABLED", False):
             response = client.get("/api/v1/curiosity/status")
 
         assert response.status_code == 200
@@ -478,8 +480,8 @@ class TestCuriosityAPI:
         """POST /api/v1/curiosity/explore/{goal_id} 触发探索"""
         _insert_goal_via_api_db(graph, goal_id="goal_explore_api")
 
-        with patch("api.CURIOSITY_ENGINE_ENABLED", True), \
-             patch("api.COGNITIVE_GOAL_ENABLED", True):
+        with patch("consciousness_sea.interfaces.api.CURIOSITY_ENGINE_ENABLED", True), \
+             patch("consciousness_sea.interfaces.api.COGNITIVE_GOAL_ENABLED", True):
             response = client.post("/api/v1/curiosity/explore/goal_explore_api")
 
         # 探索可能成功或失败（取决于内部路由），但不应返回 500
@@ -487,19 +489,19 @@ class TestCuriosityAPI:
 
     def test_trigger_curiosity_explore_not_found(self, client, graph):
         """POST /api/v1/curiosity/explore/{goal_id} 目标不存在返回 404"""
-        with patch("api.CURIOSITY_ENGINE_ENABLED", True), \
-             patch("api.COGNITIVE_GOAL_ENABLED", True):
+        with patch("consciousness_sea.interfaces.api.CURIOSITY_ENGINE_ENABLED", True), \
+             patch("consciousness_sea.interfaces.api.COGNITIVE_GOAL_ENABLED", True):
             response = client.post("/api/v1/curiosity/explore/goal_not_exist")
 
         assert response.status_code == 404
 
     def test_trigger_curiosity_explore_disabled(self, client, graph):
         """CURIOSITY_ENGINE_ENABLED=False 时返回 503"""
-        import api as api_module
+        api_module = sys.modules['consciousness_sea.interfaces.api']
         original = api_module._curiosity_engine
         api_module._curiosity_engine = None
 
-        with patch("api.CURIOSITY_ENGINE_ENABLED", False):
+        with patch("consciousness_sea.interfaces.api.CURIOSITY_ENGINE_ENABLED", False):
             response = client.post("/api/v1/curiosity/explore/some_goal")
 
         assert response.status_code == 503
@@ -512,8 +514,8 @@ class TestStatusExtension:
 
     def test_status_contains_cognitive_goals_field(self, client, graph):
         """/status 响应包含 cognitive_goals 字段"""
-        with patch("api.META_SEED_ENABLED", True), \
-             patch("api.COGNITIVE_GOAL_ENABLED", True):
+        with patch("consciousness_sea.interfaces.api.META_SEED_ENABLED", True), \
+             patch("consciousness_sea.interfaces.api.COGNITIVE_GOAL_ENABLED", True):
             response = client.get("/status")
 
         assert response.status_code == 200

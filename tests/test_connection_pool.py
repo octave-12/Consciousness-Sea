@@ -11,19 +11,24 @@
 
 import sqlite3
 import sys
-import os
+import pathlib
 import threading
 from pathlib import Path
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_root = pathlib.Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(_root))
+sys.path.insert(0, str(_root / "backend" / "src"))
 
-from core.connection_pool import ConnectionPool, ConnectionPoolExhausted, ConnectionPoolClosed
-from core.graph_db import GraphDB
+from consciousness_sea.infrastructure.connection_pool import ConnectionPool, ConnectionPoolExhausted, ConnectionPoolClosed
+from consciousness_sea.domain.graph_db import GraphDB
 
 
 def _build_test_db(db_path: str) -> None:
     """创建测试用 SQLite 数据库文件"""
     conn = sqlite3.connect(db_path)
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA synchronous=NORMAL")
+    conn.execute("PRAGMA busy_timeout=5000")
     conn.executescript("""
         CREATE TABLE seeds (
             id TEXT PRIMARY KEY, label TEXT NOT NULL,

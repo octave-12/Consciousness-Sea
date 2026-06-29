@@ -12,14 +12,16 @@ Phase 2 Top-N 熏习粒度测试 (T2.2)
 
 import sqlite3
 import sys
-import os
+import pathlib
 from unittest.mock import patch
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_root = pathlib.Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(_root))
+sys.path.insert(0, str(_root / "backend" / "src"))
 
-from core.graph_db import GraphDB
-from core.verifier import apply_karma
-from core.router import RippleResult, ActivationNode
+from consciousness_sea.domain.graph_db import GraphDB
+from consciousness_sea.domain.verifier import apply_karma
+from consciousness_sea.domain.router import RippleResult, ActivationNode
 
 
 def _build_test_db(db_path: str) -> None:
@@ -159,8 +161,8 @@ class TestTopNSelection:
 
         result = _make_ripple_result(num_seeds=30)
 
-        with patch('core.config.KARMA_FULL_SET', False), \
-             patch('core.config.KARMA_TOP_N', 10):
+        with patch('consciousness_sea.infrastructure.config.KARMA_FULL_SET', False), \
+             patch('consciousness_sea.infrastructure.config.KARMA_TOP_N', 10):
             modified = apply_karma(result, graph, karma_direction=+1)
 
         # 只有 Top-10 种子之间的路径被熏习
@@ -180,8 +182,8 @@ class TestTopNSelection:
 
         result = _make_ripple_result(num_seeds=30)
 
-        with patch('core.config.KARMA_FULL_SET', False), \
-             patch('core.config.KARMA_TOP_N', 20):
+        with patch('consciousness_sea.infrastructure.config.KARMA_FULL_SET', False), \
+             patch('consciousness_sea.infrastructure.config.KARMA_TOP_N', 20):
             modified = apply_karma(result, graph, karma_direction=+1)
 
         # Top-20 种子之间的路径最多 19 条
@@ -204,8 +206,8 @@ class TestFewerSeedsThanTopN:
 
         result = _make_ripple_result(num_seeds=5)
 
-        with patch('core.config.KARMA_FULL_SET', False), \
-             patch('core.config.KARMA_TOP_N', 20):
+        with patch('consciousness_sea.infrastructure.config.KARMA_FULL_SET', False), \
+             patch('consciousness_sea.infrastructure.config.KARMA_TOP_N', 20):
             modified = apply_karma(result, graph, karma_direction=+1)
 
         # 全部 5 个种子之间的路径（4 条）都被熏习
@@ -224,8 +226,8 @@ class TestFewerSeedsThanTopN:
 
         result = _make_ripple_result(num_seeds=1)
 
-        with patch('core.config.KARMA_FULL_SET', False), \
-             patch('core.config.KARMA_TOP_N', 20):
+        with patch('consciousness_sea.infrastructure.config.KARMA_FULL_SET', False), \
+             patch('consciousness_sea.infrastructure.config.KARMA_TOP_N', 20):
             modified = apply_karma(result, graph, karma_direction=+1)
 
         assert modified == 0
@@ -247,8 +249,8 @@ class TestPathLevelFiltering:
 
         result = _make_ripple_result(num_seeds=30)
 
-        with patch('core.config.KARMA_FULL_SET', False), \
-             patch('core.config.KARMA_TOP_N', 5):
+        with patch('consciousness_sea.infrastructure.config.KARMA_FULL_SET', False), \
+             patch('consciousness_sea.infrastructure.config.KARMA_TOP_N', 5):
             modified = apply_karma(result, graph, karma_direction=+1)
 
         # 只有 source 和 target 都在 Top-5 内的路径被熏习
@@ -278,8 +280,8 @@ class TestPathLevelFiltering:
             'ripple_activation': 0.3,
         }
 
-        with patch('core.config.KARMA_FULL_SET', False), \
-             patch('core.config.KARMA_TOP_N', 5):
+        with patch('consciousness_sea.infrastructure.config.KARMA_FULL_SET', False), \
+             patch('consciousness_sea.infrastructure.config.KARMA_TOP_N', 5):
             modified = apply_karma(result, graph, karma_direction=+1)
 
         # 种子0→1, 1→2, 2→3, 3→4 共 4 条（4→9 被排除）
@@ -302,8 +304,8 @@ class TestKarmaMaxPairs:
 
         result = _make_ripple_result(num_seeds=30)
 
-        with patch('core.config.KARMA_FULL_SET', True), \
-             patch('core.config.KARMA_MAX_PAIRS', 5):
+        with patch('consciousness_sea.infrastructure.config.KARMA_FULL_SET', True), \
+             patch('consciousness_sea.infrastructure.config.KARMA_MAX_PAIRS', 5):
             modified = apply_karma(result, graph, karma_direction=+1)
 
         # 最多修改 5 条边
@@ -322,8 +324,8 @@ class TestKarmaMaxPairs:
 
         result = _make_ripple_result(num_seeds=5)
 
-        with patch('core.config.KARMA_FULL_SET', True), \
-             patch('core.config.KARMA_MAX_PAIRS', 500):
+        with patch('consciousness_sea.infrastructure.config.KARMA_FULL_SET', True), \
+             patch('consciousness_sea.infrastructure.config.KARMA_MAX_PAIRS', 500):
             modified = apply_karma(result, graph, karma_direction=+1)
 
         # 4 条路径，不超过 500
@@ -346,7 +348,7 @@ class TestFullSetBackwardCompat:
 
         result = _make_ripple_result(num_seeds=10)
 
-        with patch('core.config.KARMA_FULL_SET', True):
+        with patch('consciousness_sea.infrastructure.config.KARMA_FULL_SET', True):
             modified = apply_karma(result, graph, karma_direction=+1)
 
         # 全部 9 条路径都被熏习
@@ -365,8 +367,8 @@ class TestFullSetBackwardCompat:
 
         result = _make_ripple_result(num_seeds=10)
 
-        with patch('core.config.KARMA_FULL_SET', True), \
-             patch('core.config.KARMA_TOP_N', 3):
+        with patch('consciousness_sea.infrastructure.config.KARMA_FULL_SET', True), \
+             patch('consciousness_sea.infrastructure.config.KARMA_TOP_N', 3):
             modified = apply_karma(result, graph, karma_direction=+1)
 
         # 即使 TOP_N=3，FULL_SET=True 时仍熏习全部路径
@@ -390,7 +392,7 @@ class TestEmptyPaths:
         result = _make_ripple_result(num_seeds=3, num_paths=0)
 
 
-        with patch('core.config.KARMA_FULL_SET', True):
+        with patch('consciousness_sea.infrastructure.config.KARMA_FULL_SET', True):
             modified = apply_karma(result, graph, karma_direction=+1)
 
         assert modified == 0

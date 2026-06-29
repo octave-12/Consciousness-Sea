@@ -17,22 +17,24 @@ from __future__ import annotations
 import json
 import sqlite3
 import sys
-import os
+import pathlib
 from datetime import datetime, timezone, timedelta
 from unittest.mock import patch
 
 import pytest
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_root = pathlib.Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(_root))
+sys.path.insert(0, str(_root / "backend" / "src"))
 
-from core.cognitive_goal import (
+from consciousness_sea.metacognition.cognitive_goal import (
     CognitiveGoalManager,
     CognitiveGoalData,
     GoalType,
     GoalStatus,
 )
-from core.graph_db import GraphDB
-from core.config import (
+from consciousness_sea.domain.graph_db import GraphDB
+from consciousness_sea.infrastructure.config import (
     COGNITIVE_GOAL_ENABLED,
     GOAL_LOW_CONF_THRESHOLD,
     GOAL_LOW_DENSITY_RATIO,
@@ -396,7 +398,7 @@ class TestGoalGeneration:
             graph.conn, "量子力学",
             {"avg_karma_density": 0.5, "ripple_success_rate": 0.3, "conflict_frequency": 100},
         )
-        with patch("core.cognitive_goal.COGNITIVE_GOAL_ENABLED", False):
+        with patch("consciousness_sea.metacognition.cognitive_goal.COGNITIVE_GOAL_ENABLED", False):
             created = mgr.generate_goals()
         assert created == 0
 
@@ -678,7 +680,7 @@ class TestGoalCooling:
 
     def test_cool_goals_disabled(self, mgr, graph):
         """COGNITIVE_GOAL_ENABLED=False 时不执行冷却"""
-        with patch("core.cognitive_goal.COGNITIVE_GOAL_ENABLED", False):
+        with patch("consciousness_sea.metacognition.cognitive_goal.COGNITIVE_GOAL_ENABLED", False):
             cooled = mgr.cool_goals()
         assert cooled == 0
 
@@ -804,7 +806,7 @@ class TestGoalQuery:
 
     def test_get_goal_stats_disabled(self, mgr, graph):
         """COGNITIVE_GOAL_ENABLED=False 时统计返回空"""
-        with patch("core.cognitive_goal.COGNITIVE_GOAL_ENABLED", False):
+        with patch("consciousness_sea.metacognition.cognitive_goal.COGNITIVE_GOAL_ENABLED", False):
             stats = mgr.get_goal_stats()
         assert stats["by_status"] == {}
         assert stats["pool_usage"]["active"] == 0
@@ -834,7 +836,7 @@ class TestTouchGoalDomain:
 
     def test_touch_goal_domain_disabled(self, mgr, graph):
         """COGNITIVE_GOAL_ENABLED=False 时不更新"""
-        with patch("core.cognitive_goal.COGNITIVE_GOAL_ENABLED", False):
+        with patch("consciousness_sea.metacognition.cognitive_goal.COGNITIVE_GOAL_ENABLED", False):
             mgr.touch_goal_domain("量子力学")
         # 不应报错
 

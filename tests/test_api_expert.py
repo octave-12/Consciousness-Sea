@@ -13,19 +13,21 @@ from __future__ import annotations
 
 import sqlite3
 import sys
-import os
+import pathlib
 from unittest.mock import patch
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_root = pathlib.Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(_root))
+sys.path.insert(0, str(_root / "backend" / "src"))
 
 from fastapi.testclient import TestClient
 
-from api import app
-from core.graph_db import GraphDB
-from core.connection_pool import ConnectionPool
-from core.user_manager import UserManager
-from core.session_manager import SessionManager, SessionContext
-from core.observer import Observer
+from consciousness_sea.interfaces.api import app
+from consciousness_sea.domain.graph_db import GraphDB
+from consciousness_sea.infrastructure.connection_pool import ConnectionPool
+from consciousness_sea.infrastructure.user_manager import UserManager
+from consciousness_sea.infrastructure.session_manager import SessionManager, SessionContext
+from consciousness_sea.infrastructure.observer import Observer
 from tests.conftest import MockExpertManager
 
 
@@ -173,7 +175,7 @@ def _override_get_observer():
     yield _test_observer
 
 
-from api import get_pool, get_session_manager, get_user_manager, get_observer
+from consciousness_sea.interfaces.api import get_pool, get_session_manager, get_user_manager, get_observer
 
 app.dependency_overrides[get_pool] = _override_get_pool
 app.dependency_overrides[get_session_manager] = _override_get_session_manager
@@ -192,12 +194,14 @@ class TestApiExpertPhase0:
     def setup_method(self):
         self.client = TestClient(app)
         # 设置 _expert_manager 为 None（Phase 0）
-        import api as api_module
+        import sys
+        api_module = sys.modules['consciousness_sea.interfaces.api']
         self._original_expert_manager = api_module._expert_manager
         api_module._expert_manager = None
 
     def teardown_method(self):
-        import api as api_module
+        import sys
+        api_module = sys.modules['consciousness_sea.interfaces.api']
         api_module._expert_manager = self._original_expert_manager
 
     def test_phase0_query_response_contains_expert_available_false(self):
@@ -239,12 +243,14 @@ class TestApiExpertPhase1:
     def setup_method(self):
         self.client = TestClient(app)
         self.mock_manager = MockExpertManager(available=True, answer="专家测试回答")
-        import api as api_module
+        import sys
+        api_module = sys.modules['consciousness_sea.interfaces.api']
         self._original_expert_manager = api_module._expert_manager
         api_module._expert_manager = self.mock_manager
 
     def teardown_method(self):
-        import api as api_module
+        import sys
+        api_module = sys.modules['consciousness_sea.interfaces.api']
         api_module._expert_manager = self._original_expert_manager
 
     def test_phase1_query_response_contains_expert_available_true(self):
@@ -298,7 +304,8 @@ class TestApiExpertStatus:
 
     def test_status_expert_status_no_manager(self):
         """无 ExpertManager 时 expert_status 显示 not_initialized"""
-        import api as api_module
+        import sys
+        api_module = sys.modules['consciousness_sea.interfaces.api']
         original = api_module._expert_manager
         api_module._expert_manager = None
 
@@ -314,7 +321,8 @@ class TestApiExpertStatus:
     def test_status_expert_status_with_mock_manager(self):
         """有 MockExpertManager 时 expert_status 显示详细信息"""
         mock_manager = MockExpertManager(available=True)
-        import api as api_module
+        import sys
+        api_module = sys.modules['consciousness_sea.interfaces.api']
         original = api_module._expert_manager
         api_module._expert_manager = mock_manager
 
@@ -334,12 +342,14 @@ class TestApiExpertBackwardCompat:
 
     def setup_method(self):
         self.client = TestClient(app)
-        import api as api_module
+        import sys
+        api_module = sys.modules['consciousness_sea.interfaces.api']
         self._original_expert_manager = api_module._expert_manager
         api_module._expert_manager = None
 
     def teardown_method(self):
-        import api as api_module
+        import sys
+        api_module = sys.modules['consciousness_sea.interfaces.api']
         api_module._expert_manager = self._original_expert_manager
 
     def test_query_endpoint_still_works(self):

@@ -15,18 +15,25 @@ from __future__ import annotations
 
 import sqlite3
 import sys
-import os
 import time
+from pathlib import Path
 from datetime import datetime, timezone
 from unittest.mock import patch, MagicMock
 
 import pytest
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# 确保 backend/src 在 sys.path 中
+_src = str(Path(__file__).resolve().parent.parent / "backend" / "src")
+if _src not in sys.path:
+    sys.path.insert(0, _src)
+# 同时保留项目根目录
+_root = str(Path(__file__).resolve().parent.parent)
+if _root not in sys.path:
+    sys.path.insert(0, _root)
 
 from fastapi.testclient import TestClient
 
-from core.perception import (
+from consciousness_sea.perception.perception import (
     PerceptionManager,
     PerceptionChannel,
     PerceptualSeedStatus,
@@ -35,13 +42,13 @@ from core.perception import (
     ChannelStatus,
     PerceptionManagerStatus,
 )
-from core.hebbian_binder import HebbianBinder, HebbianBinderStatus
-from core.multimodal_aligner import MultimodalAligner, AlignmentResult
-from core.visual_anchor import VisualAnchor, VisualFeatures
-from core.audio_anchor import AudioAnchor, AudioFeatures
-from core.somatic_anchor import SomaticAnchor, SomaticFeatures
-from core.graph_db import GraphDB
-from core.config import (
+from consciousness_sea.perception.hebbian_binder import HebbianBinder, HebbianBinderStatus
+from consciousness_sea.perception.multimodal_aligner import MultimodalAligner, AlignmentResult
+from consciousness_sea.perception.visual_anchor import VisualAnchor, VisualFeatures
+from consciousness_sea.perception.audio_anchor import AudioAnchor, AudioFeatures
+from consciousness_sea.perception.somatic_anchor import SomaticAnchor, SomaticFeatures
+from consciousness_sea.domain.graph_db import GraphDB
+from consciousness_sea.infrastructure.config import (
     PERCEPTION_ENABLED,
     HEBBIAN_TIME_WINDOW,
     HEBBIAN_LEARNING_RATE,
@@ -235,12 +242,12 @@ class TestScenario1PerceptualSeedAutoGeneration:
 
     def test_auto_generation_on_start(self, pm, graph):
         """start() 后自动生成 16 个预设感知元种子"""
-        with patch("core.perception.PERCEPTION_ENABLED", True), \
-             patch("core.visual_anchor.VisualAnchor") as MockVA, \
-             patch("core.audio_anchor.AudioAnchor") as MockAA, \
-             patch("core.somatic_anchor.SomaticAnchor") as MockSA, \
-             patch("core.hebbian_binder.HebbianBinder") as MockHB, \
-             patch("core.multimodal_aligner.MultimodalAligner") as MockMA:
+        with patch("consciousness_sea.perception.perception.PERCEPTION_ENABLED", True), \
+             patch("consciousness_sea.perception.visual_anchor.VisualAnchor") as MockVA, \
+             patch("consciousness_sea.perception.audio_anchor.AudioAnchor") as MockAA, \
+             patch("consciousness_sea.perception.somatic_anchor.SomaticAnchor") as MockSA, \
+             patch("consciousness_sea.perception.hebbian_binder.HebbianBinder") as MockHB, \
+             patch("consciousness_sea.perception.multimodal_aligner.MultimodalAligner") as MockMA:
             MockVA.return_value._mock_mode = True
             MockAA.return_value._mock_mode = True
             pm.start()
@@ -569,8 +576,8 @@ class TestScenario4ChannelDegradation:
 
     def test_visual_channel_degradation(self, pm, graph):
         """视觉通道启动失败时优雅降级"""
-        with patch("core.visual_anchor.VisualAnchor", side_effect=Exception("camera not found")), \
-             patch("core.perception.PERCEPTION_ENABLED", True):
+        with patch("consciousness_sea.perception.visual_anchor.VisualAnchor", side_effect=Exception("camera not found")), \
+             patch("consciousness_sea.perception.perception.PERCEPTION_ENABLED", True):
             result = pm._start_visual_channel()
 
         assert result is False
@@ -578,8 +585,8 @@ class TestScenario4ChannelDegradation:
 
     def test_auditory_channel_degradation(self, pm, graph):
         """听觉通道启动失败时优雅降级"""
-        with patch("core.audio_anchor.AudioAnchor", side_effect=Exception("microphone not found")), \
-             patch("core.perception.PERCEPTION_ENABLED", True):
+        with patch("consciousness_sea.perception.audio_anchor.AudioAnchor", side_effect=Exception("microphone not found")), \
+             patch("consciousness_sea.perception.perception.PERCEPTION_ENABLED", True):
             result = pm._start_auditory_channel()
 
         assert result is False
@@ -587,8 +594,8 @@ class TestScenario4ChannelDegradation:
 
     def test_somatic_channel_degradation(self, pm, graph):
         """本体感知通道启动失败时优雅降级"""
-        with patch("core.somatic_anchor.SomaticAnchor", side_effect=Exception("psutil not available")), \
-             patch("core.perception.PERCEPTION_ENABLED", True):
+        with patch("consciousness_sea.perception.somatic_anchor.SomaticAnchor", side_effect=Exception("psutil not available")), \
+             patch("consciousness_sea.perception.perception.PERCEPTION_ENABLED", True):
             result = pm._start_somatic_channel()
 
         assert result is False
@@ -596,12 +603,12 @@ class TestScenario4ChannelDegradation:
 
     def test_single_channel_failure_does_not_affect_others(self, pm, graph):
         """单个通道失败不影响其他通道"""
-        with patch("core.perception.PERCEPTION_ENABLED", True), \
-             patch("core.visual_anchor.VisualAnchor", side_effect=Exception("camera error")), \
-             patch("core.audio_anchor.AudioAnchor") as MockAA, \
-             patch("core.somatic_anchor.SomaticAnchor") as MockSA, \
-             patch("core.hebbian_binder.HebbianBinder") as MockHB, \
-             patch("core.multimodal_aligner.MultimodalAligner") as MockMA:
+        with patch("consciousness_sea.perception.perception.PERCEPTION_ENABLED", True), \
+             patch("consciousness_sea.perception.visual_anchor.VisualAnchor", side_effect=Exception("camera error")), \
+             patch("consciousness_sea.perception.audio_anchor.AudioAnchor") as MockAA, \
+             patch("consciousness_sea.perception.somatic_anchor.SomaticAnchor") as MockSA, \
+             patch("consciousness_sea.perception.hebbian_binder.HebbianBinder") as MockHB, \
+             patch("consciousness_sea.perception.multimodal_aligner.MultimodalAligner") as MockMA:
             MockAA.return_value._mock_mode = True
             pm.start()
 
@@ -615,7 +622,7 @@ class TestScenario4ChannelDegradation:
         anchor = SomaticAnchor(pm)
         # psutil 是在方法内部 import 的，不可用时自动降级
         # 直接调用 collect_features 不应抛异常
-        with patch("core.perception.PERCEPTION_ENABLED", True):
+        with patch("consciousness_sea.perception.perception.PERCEPTION_ENABLED", True):
             features = anchor.collect_features()
         # psutil 不可用时，部分指标可能为 None
         assert isinstance(features, SomaticFeatures)
@@ -638,7 +645,7 @@ class TestScenario5PerceptionDisabled:
 
     def test_start_does_nothing_when_disabled(self, pm, graph):
         """PERCEPTION_ENABLED=False 时 start() 不执行任何操作"""
-        with patch("core.perception.PERCEPTION_ENABLED", False):
+        with patch("consciousness_sea.perception.perception.PERCEPTION_ENABLED", False):
             pm.start()
 
         count = graph.conn.execute(
@@ -648,20 +655,20 @@ class TestScenario5PerceptionDisabled:
 
     def test_start_channel_returns_false_when_disabled(self, pm, graph):
         """PERCEPTION_ENABLED=False 时 start_channel() 返回 False"""
-        with patch("core.perception.PERCEPTION_ENABLED", False):
+        with patch("consciousness_sea.perception.perception.PERCEPTION_ENABLED", False):
             result = pm.start_channel("visual")
         assert result is False
 
     def test_status_shows_disabled(self, pm, graph):
         """PERCEPTION_ENABLED=False 时状态显示 disabled"""
-        with patch("core.perception.PERCEPTION_ENABLED", False):
+        with patch("consciousness_sea.perception.perception.PERCEPTION_ENABLED", False):
             status = pm.get_status()
         # enabled 字段取决于配置值
         assert isinstance(status, PerceptionManagerStatus)
 
     def test_no_seeds_generated_when_disabled(self, pm, graph):
         """PERCEPTION_ENABLED=False 时不生成任何感知元种子"""
-        with patch("core.perception.PERCEPTION_ENABLED", False):
+        with patch("consciousness_sea.perception.perception.PERCEPTION_ENABLED", False):
             pm.start()
 
         # seeds 表不应有 PERCEPTUAL 类型
@@ -690,22 +697,22 @@ class TestScenario6MultimodalAlignment:
     def test_alignment_disabled(self, graph):
         """MULTIMODAL_ALIGNMENT_ENABLED=False 时返回空列表"""
         aligner = MultimodalAligner(graph)
-        with patch("core.multimodal_aligner.MULTIMODAL_ALIGNMENT_ENABLED", False):
+        with patch("consciousness_sea.perception.multimodal_aligner.MULTIMODAL_ALIGNMENT_ENABLED", False):
             result = aligner.run_alignment()
         assert result == []
 
     def test_alignment_no_frames(self, graph):
         """无帧缓存时安全返回空列表"""
         aligner = MultimodalAligner(graph)
-        with patch("core.multimodal_aligner.MULTIMODAL_ALIGNMENT_ENABLED", True):
+        with patch("consciousness_sea.perception.multimodal_aligner.MULTIMODAL_ALIGNMENT_ENABLED", True):
             result = aligner.run_alignment()
         assert result == []
 
     def test_alignment_no_clip_model(self, graph):
         """无 CLIP 模型时安全返回空列表"""
         aligner = MultimodalAligner(graph)
-        with patch("core.multimodal_aligner.MULTIMODAL_ALIGNMENT_ENABLED", True), \
-             patch("core.multimodal_aligner.MultimodalAligner._get_recent_frames", return_value=[b"fake_frame"]):
+        with patch("consciousness_sea.perception.multimodal_aligner.MULTIMODAL_ALIGNMENT_ENABLED", True), \
+             patch("consciousness_sea.perception.multimodal_aligner.MultimodalAligner._get_recent_frames", return_value=[b"fake_frame"]):
             result = aligner.run_alignment()
         # CLIP 不可用，返回空列表
         assert result == []
@@ -715,7 +722,7 @@ class TestScenario6MultimodalAlignment:
         aligner = MultimodalAligner(graph)
         # 模拟正在运行
         aligner._running = True
-        with patch("core.multimodal_aligner.MULTIMODAL_ALIGNMENT_ENABLED", True):
+        with patch("consciousness_sea.perception.multimodal_aligner.MULTIMODAL_ALIGNMENT_ENABLED", True):
             result = aligner.run_alignment()
         assert result == []
         aligner._running = False
@@ -747,7 +754,8 @@ class TestScenario7PerceptionAPI:
     @pytest.fixture
     def client(self, graph, pm):
         """创建 TestClient，注入 mock 连接池和 PerceptionManager"""
-        import api as api_module
+        import consciousness_sea.interfaces.api as api
+        api_module = sys.modules['consciousness_sea.interfaces.api']
 
         # 创建 mock 连接池
         mock_pool = MagicMock()
@@ -766,7 +774,7 @@ class TestScenario7PerceptionAPI:
         api_module._perception_manager = pm
 
         # 创建 mock Observer
-        from core.observer import Observer, StatusData
+        from consciousness_sea.infrastructure.observer import Observer, StatusData
         mock_observer = MagicMock(spec=Observer)
         mock_status = StatusData(
             total_seeds=5,
@@ -791,7 +799,7 @@ class TestScenario7PerceptionAPI:
         api_module._session_manager = mock_session_mgr
         api_module._user_manager = mock_user_mgr
 
-        with patch("api.PERCEPTION_ENABLED", True):
+        with patch("consciousness_sea.interfaces.api.PERCEPTION_ENABLED", True):
             client = TestClient(api_module.app)
             yield client
 
@@ -804,7 +812,7 @@ class TestScenario7PerceptionAPI:
         """GET /api/v1/perception/status 返回感知系统状态"""
         pm._generate_preset_perceptual_seeds()
 
-        with patch("api.PERCEPTION_ENABLED", True):
+        with patch("consciousness_sea.interfaces.api.PERCEPTION_ENABLED", True):
             response = client.get("/api/v1/perception/status")
 
         assert response.status_code == 200
@@ -819,7 +827,7 @@ class TestScenario7PerceptionAPI:
         """GET /api/v1/perception/seeds 返回感知元种子列表"""
         pm._generate_preset_perceptual_seeds()
 
-        with patch("api.PERCEPTION_ENABLED", True):
+        with patch("consciousness_sea.interfaces.api.PERCEPTION_ENABLED", True):
             response = client.get("/api/v1/perception/seeds")
 
         assert response.status_code == 200
@@ -833,7 +841,7 @@ class TestScenario7PerceptionAPI:
             "percept:visual:red", "visual", "红色通道占比", 0.3
         )
 
-        with patch("api.PERCEPTION_ENABLED", True):
+        with patch("consciousness_sea.interfaces.api.PERCEPTION_ENABLED", True):
             response = client.get("/api/v1/perception/seeds/percept:visual:red")
 
         assert response.status_code == 200
@@ -843,14 +851,14 @@ class TestScenario7PerceptionAPI:
 
     def test_perception_seed_detail_not_found(self, client, pm, graph):
         """GET /api/v1/perception/seeds/{label} 不存在时返回 404"""
-        with patch("api.PERCEPTION_ENABLED", True):
+        with patch("consciousness_sea.interfaces.api.PERCEPTION_ENABLED", True):
             response = client.get("/api/v1/perception/seeds/percept:not:exist")
 
         assert response.status_code == 404
 
     def test_perception_bindings(self, client, pm, graph):
         """GET /api/v1/perception/bindings 返回 Hebbian 绑定边"""
-        with patch("api.PERCEPTION_ENABLED", True):
+        with patch("consciousness_sea.interfaces.api.PERCEPTION_ENABLED", True):
             response = client.get("/api/v1/perception/bindings")
 
         assert response.status_code == 200
@@ -872,7 +880,7 @@ class TestScenario7PerceptionAPI:
             channel=PerceptionChannel.VISUAL,
         ))
 
-        with patch("api.PERCEPTION_ENABLED", True):
+        with patch("consciousness_sea.interfaces.api.PERCEPTION_ENABLED", True):
             response = client.get("/api/v1/perception/events")
 
         assert response.status_code == 200
@@ -881,8 +889,8 @@ class TestScenario7PerceptionAPI:
 
     def test_perception_align(self, client, pm, graph):
         """POST /api/v1/perception/align 触发多模态对齐"""
-        with patch("api.PERCEPTION_ENABLED", True), \
-             patch("core.multimodal_aligner.MULTIMODAL_ALIGNMENT_ENABLED", True):
+        with patch("consciousness_sea.interfaces.api.PERCEPTION_ENABLED", True), \
+             patch("consciousness_sea.perception.multimodal_aligner.MULTIMODAL_ALIGNMENT_ENABLED", True):
             response = client.post("/api/v1/perception/align")
 
         assert response.status_code == 200
@@ -892,7 +900,8 @@ class TestScenario7PerceptionAPI:
 
     def test_perception_api_disabled(self, graph):
         """感知功能禁用时各端点返回默认值"""
-        import api as api_module
+        import consciousness_sea.interfaces.api as api
+        api_module = sys.modules['consciousness_sea.interfaces.api']
 
         mock_pool = MagicMock()
         mock_pool.acquire.return_value = graph
@@ -900,7 +909,7 @@ class TestScenario7PerceptionAPI:
         api_module._pool = mock_pool
         api_module._perception_manager = None
 
-        from core.observer import Observer, StatusData
+        from consciousness_sea.infrastructure.observer import Observer, StatusData
         mock_observer = MagicMock(spec=Observer)
         mock_status = StatusData(
             total_seeds=0,
@@ -924,7 +933,7 @@ class TestScenario7PerceptionAPI:
         api_module._session_manager = mock_session_mgr
         api_module._user_manager = mock_user_mgr
 
-        with patch("api.PERCEPTION_ENABLED", False):
+        with patch("consciousness_sea.interfaces.api.PERCEPTION_ENABLED", False):
             client = TestClient(api_module.app)
 
             # status

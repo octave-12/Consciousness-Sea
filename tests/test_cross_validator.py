@@ -15,11 +15,13 @@ T-019: CrossValidator 单元测试
 from __future__ import annotations
 
 import sys
-import os
+import pathlib
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_root = pathlib.Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(_root))
+sys.path.insert(0, str(_root / "backend" / "src"))
 
-from core.cross_validator import CrossValidator, CrossValidationResult, CrossValidationStatus
+from consciousness_sea.expert.cross_validator import CrossValidator, CrossValidationResult, CrossValidationStatus
 
 
 class TestCrossValidatorConsistent:

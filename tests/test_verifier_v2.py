@@ -12,12 +12,14 @@
 
 import sqlite3
 import sys
-import os
+import pathlib
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_root = pathlib.Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(_root))
+sys.path.insert(0, str(_root / "backend" / "src"))
 
-from core.graph_db import GraphDB
-from core.verifier import (
+from consciousness_sea.domain.graph_db import GraphDB
+from consciousness_sea.domain.verifier import (
     _extract_keywords_v2,
     _keyword_quality_weight,
     verify,
@@ -26,7 +28,7 @@ from core.verifier import (
     BUILTIN_STOP_WORDS,
     DOMAIN_NAMES,
 )
-from core.router import RippleResult, ActivationNode
+from consciousness_sea.domain.router import RippleResult, ActivationNode
 
 
 def _setup_db():

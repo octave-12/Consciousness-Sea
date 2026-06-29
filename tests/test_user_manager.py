@@ -14,13 +14,15 @@
 import hashlib
 import sqlite3
 import sys
-import os
+import pathlib
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_root = pathlib.Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(_root))
+sys.path.insert(0, str(_root / "backend" / "src"))
 
-from core.connection_pool import ConnectionPool
-from core.user_manager import UserManager
-from core.config import VALID_SOURCES, USER_ID_HASH_LENGTH, MAX_SOURCE_ID_LENGTH
+from consciousness_sea.infrastructure.connection_pool import ConnectionPool
+from consciousness_sea.infrastructure.user_manager import UserManager
+from consciousness_sea.infrastructure.config import VALID_SOURCES, USER_ID_HASH_LENGTH, MAX_SOURCE_ID_LENGTH
 
 
 def _build_test_db(db_path: str) -> None:
@@ -243,7 +245,7 @@ class TestUserKarmaEdge:
 
             graph = pool.acquire()
             try:
-                from core.config import KARMA_MAX
+                from consciousness_sea.infrastructure.config import KARMA_MAX
                 row = graph.conn.execute(
                     "SELECT weight FROM karma_edges WHERE source=? AND target=? AND relation=?",
                     (user_id, '感冒', '偏好')

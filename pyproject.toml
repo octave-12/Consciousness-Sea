@@ -27,10 +27,19 @@ dev = [
 ollama = [
     "httpx>=0.24",
 ]
+perception = [
+    "psutil>=5.9.0",
+]
+pytorch = [
+    "torch>=2.0.0",
+]
+all = [
+    "consciousness-sea[dev,ollama,perception,pytorch]",
+]
 
 [project.scripts]
-consciousness-sea = "cli:main"
-consciousness-sea-api = "api:main"
+consciousness-sea = "consciousness_sea.interfaces.api:main"
+consciousness-sea-api = "consciousness_sea.interfaces.api:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -56,4 +65,5 @@ select = ["E", "F", "W", "I"]
 ignore = ["E501"]
 
 [tool.setuptools.packages.find]
-include = ["core*"]
+where = ["backend/src"]
+include = ["consciousness_sea*"]

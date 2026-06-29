@@ -14,22 +14,24 @@ from __future__ import annotations
 import json
 import sqlite3
 import sys
-import os
+import pathlib
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
 import pytest
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_root = pathlib.Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(_root))
+sys.path.insert(0, str(_root / "backend" / "src"))
 
-from core.seed_candidate import (
+from consciousness_sea.learning.seed_candidate import (
     CandidateSeed,
     CandidateStatus,
     PromotionResult,
     SeedCandidateManager,
 )
-from core.graph_db import GraphDB
-from core.config import (
+from consciousness_sea.domain.graph_db import GraphDB
+from consciousness_sea.infrastructure.config import (
     CANDIDATE_SEED_AUTO_CREATE,
     CANDIDATE_SEED_EXPIRE_DAYS,
     CANDIDATE_SEED_MIN_COUNT,
@@ -405,7 +407,7 @@ class TestSeedCandidateManager:
 
     def test_auto_create_disabled(self, manager, graph):
         """CANDIDATE_SEED_AUTO_CREATE=False 时仅记录统计"""
-        with patch("core.seed_candidate.CANDIDATE_SEED_AUTO_CREATE", False):
+        with patch("consciousness_sea.learning.seed_candidate.CANDIDATE_SEED_AUTO_CREATE", False):
             processed = manager.process_unmatched_keywords(
                 ["新概念"], co_occur_seeds=["感冒"]
             )

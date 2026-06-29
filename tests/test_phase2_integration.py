@@ -12,20 +12,22 @@ Phase 2 端到端验收测试 (T10.2)
 
 import sqlite3
 import sys
-import os
+import pathlib
 import json
 from pathlib import Path
 from unittest.mock import patch
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_root = pathlib.Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(_root))
+sys.path.insert(0, str(_root / "backend" / "src"))
 
-from core.graph_db import GraphDB
-from core.verifier import apply_karma, verify
-from core.router import route, RippleResult, ActivationNode
-from core.karma_cleaner import KarmaCleaner
-from core.distillation_pool import DistillationPool
-from core.connection_pool import ConnectionPool
-from core.config import COLD_START_QUERIES
+from consciousness_sea.domain.graph_db import GraphDB
+from consciousness_sea.domain.verifier import apply_karma, verify
+from consciousness_sea.domain.router import route, RippleResult, ActivationNode
+from consciousness_sea.infrastructure.karma_cleaner import KarmaCleaner
+from consciousness_sea.learning.distillation_pool import DistillationPool
+from consciousness_sea.infrastructure.connection_pool import ConnectionPool
+from consciousness_sea.infrastructure.config import COLD_START_QUERIES
 
 
 def _build_test_db(db_path: str) -> None:
@@ -139,12 +141,12 @@ class TestScenario1TopNReduction:
         result = route('感冒', graph)
 
         # 全量熏习
-        with patch('core.config.KARMA_FULL_SET', True):
+        with patch('consciousness_sea.infrastructure.config.KARMA_FULL_SET', True):
             full_count = apply_karma(result, graph, karma_direction=+1, dry_run=True)
 
         # Top-N 熏习
-        with patch('core.config.KARMA_FULL_SET', False), \
-             patch('core.config.KARMA_TOP_N', 3):
+        with patch('consciousness_sea.infrastructure.config.KARMA_FULL_SET', False), \
+             patch('consciousness_sea.infrastructure.config.KARMA_TOP_N', 3):
             top_n_count = apply_karma(result, graph, karma_direction=+1, dry_run=True)
 
         # Top-N 熏习对数应 <= 全量
@@ -162,8 +164,8 @@ class TestScenario1TopNReduction:
 
         result = route('感冒', graph)
 
-        with patch('core.config.KARMA_FULL_SET', True), \
-             patch('core.config.KARMA_MAX_PAIRS', 500):
+        with patch('consciousness_sea.infrastructure.config.KARMA_FULL_SET', True), \
+             patch('consciousness_sea.infrastructure.config.KARMA_MAX_PAIRS', 500):
             modified = apply_karma(result, graph, karma_direction=+1, dry_run=True)
 
         assert modified <= 500
@@ -303,7 +305,7 @@ class TestScenario4DistillationUpgrade:
         # 验证全局业力边已创建
         edge = graph.get_edge('感冒', '头痛', 'RELATED')
         assert edge is not None
-        from core.config import DISTILLATION_INITIAL_WEIGHT
+        from consciousness_sea.infrastructure.config import DISTILLATION_INITIAL_WEIGHT
         assert edge['weight'] >= DISTILLATION_INITIAL_WEIGHT
 
         # 验证提炼池状态
@@ -329,7 +331,7 @@ class TestScenario5DualKarmaSuperposition:
         graph.conn.commit()
 
         # 递增用户查询计数使冷启动因子=1.0（否则新用户 cold_factor=0 会清零个人权重）
-        from core.cold_start import ColdStartManager
+        from consciousness_sea.learning.cold_start import ColdStartManager
         csm = ColdStartManager(graph)
         for _ in range(COLD_START_QUERIES):
             csm.increment_query_count('user_A')
@@ -437,7 +439,7 @@ class TestScenario6BackwardCompatibility:
         result = route('感冒', graph, user_label=None)
 
         # 生成回答
-        from core.answerer import answer_from_activation
+        from consciousness_sea.domain.answerer import answer_from_activation
         answer_text = answer_from_activation(result, graph)
 
         # 校验

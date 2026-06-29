@@ -16,14 +16,16 @@ from __future__ import annotations
 import json
 import sqlite3
 import sys
-import os
+import pathlib
 from unittest.mock import patch
 
 import pytest
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_root = pathlib.Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(_root))
+sys.path.insert(0, str(_root / "backend" / "src"))
 
-from core.meta_seed import (
+from consciousness_sea.metacognition.meta_seed import (
     MetaSeedManager,
     MetaSeedData,
     MetaSeedCategory,
@@ -35,8 +37,8 @@ from core.meta_seed import (
     PERFORMANCE_MONITOR_DEFAULT_METRICS,
     SYSTEM_META_SEEDS,
 )
-from core.graph_db import GraphDB
-from core.config import (
+from consciousness_sea.domain.graph_db import GraphDB
+from consciousness_sea.infrastructure.config import (
     META_SEED_ENABLED,
     META_KARMA_DELTA_THRESHOLD,
     META_SEED_DORMANT_CYCLES,
@@ -736,57 +738,57 @@ class TestMetaSeedDisabled:
 
     def test_generate_domain_monitors_disabled(self, mgr, graph):
         """禁用时 generate_domain_monitors 返回 0"""
-        with patch("core.meta_seed.META_SEED_ENABLED", False):
+        with patch("consciousness_sea.metacognition.meta_seed.META_SEED_ENABLED", False):
             assert mgr.generate_domain_monitors() == 0
 
     def test_generate_relation_monitors_disabled(self, mgr, graph):
         """禁用时 generate_relation_monitors 返回 0"""
-        with patch("core.meta_seed.META_SEED_ENABLED", False):
+        with patch("consciousness_sea.metacognition.meta_seed.META_SEED_ENABLED", False):
             assert mgr.generate_relation_monitors() == 0
 
     def test_generate_system_monitors_disabled(self, mgr, graph):
         """禁用时 generate_system_monitors 返回 0"""
-        with patch("core.meta_seed.META_SEED_ENABLED", False):
+        with patch("consciousness_sea.metacognition.meta_seed.META_SEED_ENABLED", False):
             assert mgr.generate_system_monitors() == 0
 
     def test_get_meta_seed_disabled(self, mgr, graph):
         """禁用时 get_meta_seed 返回 None"""
-        with patch("core.meta_seed.META_SEED_ENABLED", False):
+        with patch("consciousness_sea.metacognition.meta_seed.META_SEED_ENABLED", False):
             assert mgr.get_meta_seed("meta:医学") is None
 
     def test_list_meta_seeds_disabled(self, mgr, graph):
         """禁用时 list_meta_seeds 返回空列表"""
-        with patch("core.meta_seed.META_SEED_ENABLED", False):
+        with patch("consciousness_sea.metacognition.meta_seed.META_SEED_ENABLED", False):
             assert mgr.list_meta_seeds() == []
 
     def test_update_metrics_disabled(self, mgr, graph):
         """禁用时 update_metrics 返回 False"""
-        with patch("core.meta_seed.META_SEED_ENABLED", False):
+        with patch("consciousness_sea.metacognition.meta_seed.META_SEED_ENABLED", False):
             assert mgr.update_metrics("meta:医学", {}) is False
 
     def test_increment_metric_disabled(self, mgr, graph):
         """禁用时 increment_metric 返回 False"""
-        with patch("core.meta_seed.META_SEED_ENABLED", False):
+        with patch("consciousness_sea.metacognition.meta_seed.META_SEED_ENABLED", False):
             assert mgr.increment_metric("meta:医学", "conflict_frequency") is False
 
     def test_check_and_create_meta_karma_disabled(self, mgr, graph):
         """禁用时 check_and_create_meta_karma 返回 0"""
-        with patch("core.meta_seed.META_SEED_ENABLED", False):
+        with patch("consciousness_sea.metacognition.meta_seed.META_SEED_ENABLED", False):
             assert mgr.check_and_create_meta_karma() == 0
 
     def test_check_dormant_status_disabled(self, mgr, graph):
         """禁用时 check_dormant_status 返回 0"""
-        with patch("core.meta_seed.META_SEED_ENABLED", False):
+        with patch("consciousness_sea.metacognition.meta_seed.META_SEED_ENABLED", False):
             assert mgr.check_dormant_status() == 0
 
     def test_update_self_boundary_disabled(self, mgr, graph):
         """禁用时 update_self_boundary 返回 0"""
-        with patch("core.meta_seed.META_SEED_ENABLED", False):
+        with patch("consciousness_sea.metacognition.meta_seed.META_SEED_ENABLED", False):
             assert mgr.update_self_boundary() == 0
 
     def test_detect_unknown_domains_disabled(self, mgr, graph):
         """禁用时 detect_unknown_domains 返回 0"""
-        with patch("core.meta_seed.META_SEED_ENABLED", False):
+        with patch("consciousness_sea.metacognition.meta_seed.META_SEED_ENABLED", False):
             assert mgr.detect_unknown_domains() == 0
 
 

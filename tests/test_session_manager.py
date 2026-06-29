@@ -9,13 +9,15 @@ Session 管理器单元测试 (TASK-5.5)
 
 import sqlite3
 import sys
-import os
+import pathlib
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_root = pathlib.Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(_root))
+sys.path.insert(0, str(_root / "backend" / "src"))
 
-from core.connection_pool import ConnectionPool
-from core.session_manager import SessionManager, SessionContext
-from core.graph_db import GraphDB
+from consciousness_sea.infrastructure.connection_pool import ConnectionPool
+from consciousness_sea.infrastructure.session_manager import SessionManager, SessionContext
+from consciousness_sea.domain.graph_db import GraphDB
 
 
 def _build_test_db(db_path: str) -> None:

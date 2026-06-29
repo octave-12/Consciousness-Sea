@@ -15,15 +15,17 @@ from __future__ import annotations
 
 import math
 import sys
-import os
+import pathlib
 import time
 from unittest.mock import patch, MagicMock
 
 import pytest
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_root = pathlib.Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(_root))
+sys.path.insert(0, str(_root / "backend" / "src"))
 
-from core.audio_anchor import AudioAnchor, AudioFeatures, _validate_freq_threshold
+from consciousness_sea.perception.audio_anchor import AudioAnchor, AudioFeatures, _validate_freq_threshold
 
 
 # ═══════════════════════════════════════════════════════════
@@ -70,7 +72,7 @@ def mock_pm():
 @pytest.fixture
 def anchor(mock_pm):
     """创建 AudioAnchor 实例（mock 模式）"""
-    with patch("core.audio_anchor.AUDITORY_MOCK_MODE", True):
+    with patch("consciousness_sea.perception.audio_anchor.AUDITORY_MOCK_MODE", True):
         a = AudioAnchor(mock_pm)
     return a
 

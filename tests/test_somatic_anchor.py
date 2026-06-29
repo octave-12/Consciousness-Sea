@@ -14,15 +14,17 @@ Phase 6 SomaticAnchor 单元测试
 from __future__ import annotations
 
 import sys
-import os
+import pathlib
 from unittest.mock import patch, MagicMock
 
 import pytest
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_root = pathlib.Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(_root))
+sys.path.insert(0, str(_root / "backend" / "src"))
 
-from core.somatic_anchor import SomaticAnchor, SomaticFeatures
-from core.config import (
+from consciousness_sea.perception.somatic_anchor import SomaticAnchor, SomaticFeatures
+from consciousness_sea.infrastructure.config import (
     SOMATIC_HIGH_TEMP_THRESHOLD,
     SOMATIC_HIGH_MEMORY_THRESHOLD,
     SOMATIC_SLOW_RESPONSE_THRESHOLD,
@@ -76,8 +78,8 @@ class TestCollectFeatures:
 
     def test_collect_features_psutil_unavailable(self, anchor):
         """psutil 不可用时优雅降级"""
-        with patch("core.somatic_anchor.SomaticAnchor._read_cpu_temp", return_value=None), \
-             patch("core.somatic_anchor.SomaticAnchor._read_memory_percent", return_value=None):
+        with patch("consciousness_sea.perception.somatic_anchor.SomaticAnchor._read_cpu_temp", return_value=None), \
+             patch("consciousness_sea.perception.somatic_anchor.SomaticAnchor._read_memory_percent", return_value=None):
             features = anchor.collect_features()
         assert features.cpu_temp is None
         assert features.memory_percent is None

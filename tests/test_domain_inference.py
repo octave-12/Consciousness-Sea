@@ -14,11 +14,13 @@
 import json
 import sqlite3
 import sys
-import os
+import pathlib
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_root = pathlib.Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(_root))
+sys.path.insert(0, str(_root / "backend" / "src"))
 
-from core.domain_inference import (
+from consciousness_sea.domain.domain_inference import (
     infer_single_domain,
     DomainInferenceReport,
     BFS_MAX_DEPTH,

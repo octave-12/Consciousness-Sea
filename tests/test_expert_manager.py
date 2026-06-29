@@ -20,14 +20,16 @@ T-021: ExpertManager 单元测试（Mock GPU）
 from __future__ import annotations
 
 import sys
-import os
+import pathlib
 import threading
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_root = pathlib.Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(_root))
+sys.path.insert(0, str(_root / "backend" / "src"))
 
-from core.expert_manager import (
+from consciousness_sea.expert.expert_manager import (
     ExpertManager,
     ExpertStatus,
     InferenceResult,
@@ -45,8 +47,8 @@ class TestExpertManagerNoTorch:
         if _TORCH_AVAILABLE:
             # 如果系统安装了 torch，跳过此测试
             # 使用 mock 模拟无 torch 环境
-            with patch("core.expert_manager._TORCH_AVAILABLE", False):
-                with patch("core.expert_manager.torch", None):
+            with patch("consciousness_sea.expert.expert_manager._TORCH_AVAILABLE", False):
+                with patch("consciousness_sea.expert.expert_manager.torch", None):
                     em = ExpertManager(expert_backend="pytorch")
                     em.initialize()
                     assert em.status.unavailable_reason == "no_torch"
@@ -58,8 +60,8 @@ class TestExpertManagerNoTorch:
     def test_no_torch_expert_not_available(self):
         """PyTorch 未安装 → expert_available=False"""
         if _TORCH_AVAILABLE:
-            with patch("core.expert_manager._TORCH_AVAILABLE", False):
-                with patch("core.expert_manager.torch", None):
+            with patch("consciousness_sea.expert.expert_manager._TORCH_AVAILABLE", False):
+                with patch("consciousness_sea.expert.expert_manager.torch", None):
                     em = ExpertManager(expert_backend="pytorch")
                     em.initialize()
                     assert em.expert_available is False
@@ -81,8 +83,8 @@ class TestExpertManagerNoGPU:
         mock_torch = MagicMock()
         mock_torch.cuda.is_available.return_value = False
 
-        with patch("core.expert_manager.torch", mock_torch):
-            with patch("core.expert_manager._TORCH_AVAILABLE", True):
+        with patch("consciousness_sea.expert.expert_manager.torch", mock_torch):
+            with patch("consciousness_sea.expert.expert_manager._TORCH_AVAILABLE", True):
                 em = ExpertManager(expert_backend="pytorch")
                 em.initialize()
                 assert em.status.unavailable_reason == "no_gpu"
@@ -100,8 +102,8 @@ class TestExpertManagerNoModel:
         mock_torch = MagicMock()
         mock_torch.cuda.is_available.return_value = True
 
-        with patch("core.expert_manager.torch", mock_torch):
-            with patch("core.expert_manager._TORCH_AVAILABLE", True):
+        with patch("consciousness_sea.expert.expert_manager.torch", mock_torch):
+            with patch("consciousness_sea.expert.expert_manager._TORCH_AVAILABLE", True):
                 em = ExpertManager(model_path=Path("/nonexistent/model/path"), expert_backend="pytorch")
                 em.initialize()
                 assert em.status.unavailable_reason == "no_model"
@@ -115,8 +117,8 @@ class TestExpertManagerNoModel:
         mock_torch = MagicMock()
         mock_torch.cuda.is_available.return_value = True
 
-        with patch("core.expert_manager.torch", mock_torch):
-            with patch("core.expert_manager._TORCH_AVAILABLE", True):
+        with patch("consciousness_sea.expert.expert_manager.torch", mock_torch):
+            with patch("consciousness_sea.expert.expert_manager._TORCH_AVAILABLE", True):
                 em = ExpertManager(model_path=Path(""), expert_backend="pytorch")
                 em.initialize()
                 assert em.status.unavailable_reason == "no_model"
@@ -201,8 +203,8 @@ class TestExpertManagerTimeout:
         mock_tokenizer.return_value = {"input_ids": MagicMock(shape=MagicMock(return_value=MagicMock(__getitem__=lambda s, i: 1)))}
         mock_tokenizer.decode.return_value = "测试回答"
 
-        with patch("core.expert_manager.torch", mock_torch):
-            with patch("core.expert_manager._TORCH_AVAILABLE", True):
+        with patch("consciousness_sea.expert.expert_manager.torch", mock_torch):
+            with patch("consciousness_sea.expert.expert_manager._TORCH_AVAILABLE", True):
                 em = ExpertManager(inference_timeout=1.0)
                 em._initialized = True
                 em._expert_available = True
@@ -241,8 +243,8 @@ class TestExpertManagerCudaOOM:
         mock_tokenizer = MagicMock()
         mock_tokenizer.return_value = {"input_ids": MagicMock(shape=MagicMock(return_value=MagicMock(__getitem__=lambda s, i: 1)))}
 
-        with patch("core.expert_manager.torch", mock_torch):
-            with patch("core.expert_manager._TORCH_AVAILABLE", True):
+        with patch("consciousness_sea.expert.expert_manager.torch", mock_torch):
+            with patch("consciousness_sea.expert.expert_manager._TORCH_AVAILABLE", True):
                 em = ExpertManager()
                 em._initialized = True
                 em._expert_available = True
@@ -397,14 +399,14 @@ class TestOllamaBackendSelection:
 
     def test_backend_ollama_available(self):
         """EXPERT_BACKEND='ollama' + Ollama 可用 -> 使用 Ollama 后端"""
-        with patch("core.expert_manager._HTTPX_AVAILABLE", True):
+        with patch("consciousness_sea.expert.expert_manager._HTTPX_AVAILABLE", True):
             mock_httpx = MagicMock()
             mock_response = MagicMock()
             mock_response.status_code = 200
             mock_response.json.return_value = {"models": [{"name": "deepseek-r1-7b"}]}
             mock_httpx.get.return_value = mock_response
 
-            with patch("core.expert_manager.httpx", mock_httpx):
+            with patch("consciousness_sea.expert.expert_manager.httpx", mock_httpx):
                 em = ExpertManager(expert_backend="ollama")
                 em.initialize()
                 assert em.expert_available is True
@@ -412,11 +414,11 @@ class TestOllamaBackendSelection:
 
     def test_backend_ollama_unavailable_fallback(self):
         """EXPERT_BACKEND='ollama' + Ollama 不可用 -> 降级"""
-        with patch("core.expert_manager._HTTPX_AVAILABLE", True):
+        with patch("consciousness_sea.expert.expert_manager._HTTPX_AVAILABLE", True):
             mock_httpx = MagicMock()
             mock_httpx.get.side_effect = Exception("Connection refused")
 
-            with patch("core.expert_manager.httpx", mock_httpx):
+            with patch("consciousness_sea.expert.expert_manager.httpx", mock_httpx):
                 em = ExpertManager(expert_backend="ollama")
                 em.initialize()
                 assert em.expert_available is False
@@ -425,14 +427,14 @@ class TestOllamaBackendSelection:
 
     def test_backend_auto_ollama_available(self):
         """EXPERT_BACKEND='auto' + Ollama 可用 -> 使用 Ollama 后端"""
-        with patch("core.expert_manager._HTTPX_AVAILABLE", True):
+        with patch("consciousness_sea.expert.expert_manager._HTTPX_AVAILABLE", True):
             mock_httpx = MagicMock()
             mock_response = MagicMock()
             mock_response.status_code = 200
             mock_response.json.return_value = {"models": [{"name": "deepseek-r1-7b"}]}
             mock_httpx.get.return_value = mock_response
 
-            with patch("core.expert_manager.httpx", mock_httpx):
+            with patch("consciousness_sea.expert.expert_manager.httpx", mock_httpx):
                 em = ExpertManager(expert_backend="auto")
                 em.initialize()
                 assert em.expert_available is True
@@ -440,14 +442,14 @@ class TestOllamaBackendSelection:
 
     def test_backend_auto_ollama_unavailable_falls_to_pytorch(self):
         """EXPERT_BACKEND='auto' + Ollama 不可用 -> 尝试 PyTorch"""
-        with patch("core.expert_manager._HTTPX_AVAILABLE", True):
+        with patch("consciousness_sea.expert.expert_manager._HTTPX_AVAILABLE", True):
             mock_httpx = MagicMock()
             mock_httpx.get.side_effect = Exception("Connection refused")
 
-            with patch("core.expert_manager.httpx", mock_httpx):
+            with patch("consciousness_sea.expert.expert_manager.httpx", mock_httpx):
                 # PyTorch 也不可用
-                with patch("core.expert_manager._TORCH_AVAILABLE", False):
-                    with patch("core.expert_manager.torch", None):
+                with patch("consciousness_sea.expert.expert_manager._TORCH_AVAILABLE", False):
+                    with patch("consciousness_sea.expert.expert_manager.torch", None):
                         em = ExpertManager(expert_backend="auto")
                         em.initialize()
                         assert em.expert_available is False
@@ -455,8 +457,8 @@ class TestOllamaBackendSelection:
 
     def test_backend_pytorch_skips_ollama(self):
         """EXPERT_BACKEND='pytorch' -> 跳过 Ollama 检查"""
-        with patch("core.expert_manager._TORCH_AVAILABLE", False):
-            with patch("core.expert_manager.torch", None):
+        with patch("consciousness_sea.expert.expert_manager._TORCH_AVAILABLE", False):
+            with patch("consciousness_sea.expert.expert_manager.torch", None):
                 em = ExpertManager(expert_backend="pytorch")
                 em.initialize()
                 assert em.expert_available is False
@@ -484,7 +486,7 @@ class TestOllamaInference:
 
     def test_ollama_infer_success(self):
         """Ollama 推理成功"""
-        with patch("core.expert_manager._HTTPX_AVAILABLE", True):
+        with patch("consciousness_sea.expert.expert_manager._HTTPX_AVAILABLE", True):
             mock_httpx = MagicMock()
             mock_response = MagicMock()
             mock_response.status_code = 200
@@ -492,7 +494,7 @@ class TestOllamaInference:
             mock_response.json.return_value = {"response": "这是Ollama的回答"}
             mock_httpx.post.return_value = mock_response
 
-            with patch("core.expert_manager.httpx", mock_httpx):
+            with patch("consciousness_sea.expert.expert_manager.httpx", mock_httpx):
                 em = self._create_ollama_manager()
                 result = em.infer("测试问题", "医学")
 
@@ -502,11 +504,11 @@ class TestOllamaInference:
 
     def test_ollama_infer_failure_fallback(self):
         """Ollama 推理失败 -> 降级"""
-        with patch("core.expert_manager._HTTPX_AVAILABLE", True):
+        with patch("consciousness_sea.expert.expert_manager._HTTPX_AVAILABLE", True):
             mock_httpx = MagicMock()
             mock_httpx.post.side_effect = Exception("Connection refused")
 
-            with patch("core.expert_manager.httpx", mock_httpx):
+            with patch("consciousness_sea.expert.expert_manager.httpx", mock_httpx):
                 em = self._create_ollama_manager()
                 result = em.infer("测试问题", "医学")
 
@@ -516,12 +518,12 @@ class TestOllamaInference:
 
     def test_ollama_infer_timeout_fallback(self):
         """Ollama 推理超时 -> 降级"""
-        with patch("core.expert_manager._HTTPX_AVAILABLE", True):
+        with patch("consciousness_sea.expert.expert_manager._HTTPX_AVAILABLE", True):
             import httpx as _real_httpx
             mock_httpx = MagicMock()
             mock_httpx.post.side_effect = _real_httpx.ReadTimeout("Read timed out")
 
-            with patch("core.expert_manager.httpx", mock_httpx):
+            with patch("consciousness_sea.expert.expert_manager.httpx", mock_httpx):
                 em = self._create_ollama_manager()
                 result = em.infer("测试问题", "医学")
 
@@ -530,7 +532,7 @@ class TestOllamaInference:
 
     def test_ollama_infer_increments_counter(self):
         """Ollama 推理成功递增 inference_count"""
-        with patch("core.expert_manager._HTTPX_AVAILABLE", True):
+        with patch("consciousness_sea.expert.expert_manager._HTTPX_AVAILABLE", True):
             mock_httpx = MagicMock()
             mock_response = MagicMock()
             mock_response.status_code = 200
@@ -538,7 +540,7 @@ class TestOllamaInference:
             mock_response.json.return_value = {"response": "回答"}
             mock_httpx.post.return_value = mock_response
 
-            with patch("core.expert_manager.httpx", mock_httpx):
+            with patch("consciousness_sea.expert.expert_manager.httpx", mock_httpx):
                 em = self._create_ollama_manager()
                 initial_count = em.status.inference_count
                 em.infer("测试", "医学")
@@ -546,7 +548,7 @@ class TestOllamaInference:
 
     def test_ollama_no_lora_switch(self):
         """Ollama 后端不执行 LoRA 切换"""
-        with patch("core.expert_manager._HTTPX_AVAILABLE", True):
+        with patch("consciousness_sea.expert.expert_manager._HTTPX_AVAILABLE", True):
             mock_httpx = MagicMock()
             mock_response = MagicMock()
             mock_response.status_code = 200
@@ -554,7 +556,7 @@ class TestOllamaInference:
             mock_response.json.return_value = {"response": "回答"}
             mock_httpx.post.return_value = mock_response
 
-            with patch("core.expert_manager.httpx", mock_httpx):
+            with patch("consciousness_sea.expert.expert_manager.httpx", mock_httpx):
                 em = self._create_ollama_manager()
                 em.infer("测试", "医学")
                 # Ollama 后端不切换 LoRA
@@ -562,7 +564,7 @@ class TestOllamaInference:
 
     def test_ollama_infer_with_think_tag(self):
         """Ollama 推理结果含思考标签 -> 清洗后只保留回答"""
-        with patch("core.expert_manager._HTTPX_AVAILABLE", True):
+        with patch("consciousness_sea.expert.expert_manager._HTTPX_AVAILABLE", True):
             mock_httpx = MagicMock()
             mock_response = MagicMock()
             mock_response.status_code = 200
@@ -574,7 +576,7 @@ class TestOllamaInference:
             mock_response.json.return_value = {"response": raw_response}
             mock_httpx.post.return_value = mock_response
 
-            with patch("core.expert_manager.httpx", mock_httpx):
+            with patch("consciousness_sea.expert.expert_manager.httpx", mock_httpx):
                 em = self._create_ollama_manager()
                 result = em.infer("测试问题", "医学")
 
@@ -584,7 +586,7 @@ class TestOllamaInference:
 
     def test_ollama_api_call_format(self):
         """Ollama API 调用格式正确"""
-        with patch("core.expert_manager._HTTPX_AVAILABLE", True):
+        with patch("consciousness_sea.expert.expert_manager._HTTPX_AVAILABLE", True):
             mock_httpx = MagicMock()
             mock_response = MagicMock()
             mock_response.status_code = 200
@@ -592,7 +594,7 @@ class TestOllamaInference:
             mock_response.json.return_value = {"response": "回答"}
             mock_httpx.post.return_value = mock_response
 
-            with patch("core.expert_manager.httpx", mock_httpx):
+            with patch("consciousness_sea.expert.expert_manager.httpx", mock_httpx):
                 em = self._create_ollama_manager()
                 em.infer("测试prompt", "医学", max_new_tokens=256)
 
@@ -609,7 +611,7 @@ class TestOllamaInference:
 
     def test_ollama_custom_config(self):
         """Ollama 自定义配置"""
-        with patch("core.expert_manager._HTTPX_AVAILABLE", True):
+        with patch("consciousness_sea.expert.expert_manager._HTTPX_AVAILABLE", True):
             mock_httpx = MagicMock()
             mock_response = MagicMock()
             mock_response.status_code = 200
@@ -617,7 +619,7 @@ class TestOllamaInference:
             mock_response.json.return_value = {"response": "回答"}
             mock_httpx.post.return_value = mock_response
 
-            with patch("core.expert_manager.httpx", mock_httpx):
+            with patch("consciousness_sea.expert.expert_manager.httpx", mock_httpx):
                 em = ExpertManager(
                     expert_backend="ollama",
                     ollama_base_url="http://192.168.1.100:11434",
@@ -641,57 +643,57 @@ class TestOllamaCheckAvailable:
 
     def test_check_ollama_available_httpx_success(self):
         """httpx 检查 Ollama 可用 - 成功"""
-        with patch("core.expert_manager._HTTPX_AVAILABLE", True):
+        with patch("consciousness_sea.expert.expert_manager._HTTPX_AVAILABLE", True):
             mock_httpx = MagicMock()
             mock_response = MagicMock()
             mock_response.status_code = 200
             mock_response.json.return_value = {"models": [{"name": "deepseek-r1-7b"}]}
             mock_httpx.get.return_value = mock_response
 
-            with patch("core.expert_manager.httpx", mock_httpx):
+            with patch("consciousness_sea.expert.expert_manager.httpx", mock_httpx):
                 em = ExpertManager(expert_backend="ollama")
                 assert em._check_ollama_available() is True
 
     def test_check_ollama_available_httpx_connection_refused(self):
         """httpx 检查 Ollama 可用 - 连接拒绝"""
-        with patch("core.expert_manager._HTTPX_AVAILABLE", True):
+        with patch("consciousness_sea.expert.expert_manager._HTTPX_AVAILABLE", True):
             mock_httpx = MagicMock()
             mock_httpx.get.side_effect = Exception("Connection refused")
 
-            with patch("core.expert_manager.httpx", mock_httpx):
+            with patch("consciousness_sea.expert.expert_manager.httpx", mock_httpx):
                 em = ExpertManager(expert_backend="ollama")
                 assert em._check_ollama_available() is False
 
     def test_check_ollama_available_httpx_non_200(self):
         """httpx 检查 Ollama 可用 - 非 200 状态码"""
-        with patch("core.expert_manager._HTTPX_AVAILABLE", True):
+        with patch("consciousness_sea.expert.expert_manager._HTTPX_AVAILABLE", True):
             mock_httpx = MagicMock()
             mock_response = MagicMock()
             mock_response.status_code = 500
             mock_httpx.get.return_value = mock_response
 
-            with patch("core.expert_manager.httpx", mock_httpx):
+            with patch("consciousness_sea.expert.expert_manager.httpx", mock_httpx):
                 em = ExpertManager(expert_backend="ollama")
                 assert em._check_ollama_available() is False
 
     def test_check_ollama_available_model_with_latest_suffix(self):
         """Ollama 模型名带 :latest 后缀也能匹配"""
-        with patch("core.expert_manager._HTTPX_AVAILABLE", True):
+        with patch("consciousness_sea.expert.expert_manager._HTTPX_AVAILABLE", True):
             mock_httpx = MagicMock()
             mock_response = MagicMock()
             mock_response.status_code = 200
             mock_response.json.return_value = {"models": [{"name": "deepseek-r1-7b:latest"}]}
             mock_httpx.get.return_value = mock_response
 
-            with patch("core.expert_manager.httpx", mock_httpx):
+            with patch("consciousness_sea.expert.expert_manager.httpx", mock_httpx):
                 em = ExpertManager(expert_backend="ollama")
                 # 模型名不匹配但服务可用，仍返回 True
                 assert em._check_ollama_available() is True
 
     def test_check_ollama_available_urllib_fallback(self):
         """httpx 不可用时使用 urllib 备选"""
-        with patch("core.expert_manager._HTTPX_AVAILABLE", False):
-            with patch("core.expert_manager.httpx", None):
+        with patch("consciousness_sea.expert.expert_manager._HTTPX_AVAILABLE", False):
+            with patch("consciousness_sea.expert.expert_manager.httpx", None):
                 em = ExpertManager(expert_backend="ollama")
                 # urllib 连接本地 Ollama 大概率失败，测试降级逻辑
                 result = em._check_ollama_available()

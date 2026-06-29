@@ -16,15 +16,17 @@ from __future__ import annotations
 
 import struct
 import sys
-import os
+import pathlib
 import time
 from unittest.mock import patch, MagicMock
 
 import pytest
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_root = pathlib.Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(_root))
+sys.path.insert(0, str(_root / "backend" / "src"))
 
-from core.visual_anchor import VisualAnchor, VisualFeatures, _clamp_threshold
+from consciousness_sea.perception.visual_anchor import VisualAnchor, VisualFeatures, _clamp_threshold
 
 
 # ═══════════════════════════════════════════════════════════
@@ -110,7 +112,7 @@ def mock_pm():
 @pytest.fixture
 def anchor(mock_pm):
     """创建 VisualAnchor 实例（mock 模式）"""
-    with patch("core.visual_anchor.VISUAL_MOCK_MODE", True):
+    with patch("consciousness_sea.perception.visual_anchor.VISUAL_MOCK_MODE", True):
         a = VisualAnchor(mock_pm)
     return a
 
@@ -254,7 +256,7 @@ class TestMockMode:
 
     def test_inject_mock_frame_small(self, mock_pm):
         """inject_mock_frame() 使用小帧数据"""
-        with patch("core.visual_anchor.VISUAL_MOCK_MODE", True):
+        with patch("consciousness_sea.perception.visual_anchor.VISUAL_MOCK_MODE", True):
             anchor = VisualAnchor(mock_pm)
         frame = _make_solid_frame(200, 50, 50, width=8, height=8)
         anchor.inject_mock_frame(frame)

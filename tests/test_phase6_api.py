@@ -17,18 +17,19 @@ from __future__ import annotations
 
 import sqlite3
 import sys
-import os
+import pathlib
 from unittest.mock import patch, MagicMock
 
 import pytest
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent / 'backend' / 'src'))
 
 from fastapi.testclient import TestClient
 
-from core.graph_db import GraphDB
-from core.perception import PerceptionManager, PerceptionChannel, PerceptualSeedStatus
-from core.config import PERCEPTION_ENABLED
+from consciousness_sea.domain.graph_db import GraphDB
+from consciousness_sea.perception.perception import PerceptionManager, PerceptionChannel, PerceptualSeedStatus
+from consciousness_sea.infrastructure.config import PERCEPTION_ENABLED
 
 
 # ═══════════════════════════════════════════════════════════
@@ -168,7 +169,8 @@ def graph():
 @pytest.fixture
 def client(graph):
     """创建 TestClient，注入 mock 的连接池和 PerceptionManager"""
-    import api as api_module
+    import consciousness_sea.interfaces.api as api  # 触发 api.app 模块导入
+    api_module = sys.modules['consciousness_sea.interfaces.api']
 
     # 创建 mock 连接池
     mock_pool = MagicMock()
@@ -186,12 +188,12 @@ def client(graph):
     pm = PerceptionManager(graph)
     pm._generate_preset_perceptual_seeds()
 
-    # 注入到 api 模块
+    # 注入到 api.app 模块（直接修改模块级变量）
     api_module._pool = mock_pool
     api_module._perception_manager = pm
 
     # 创建 mock Observer
-    from core.observer import Observer, StatusData
+    from consciousness_sea.infrastructure.observer import Observer, StatusData
     mock_observer = MagicMock(spec=Observer)
     mock_status = StatusData(
         total_seeds=2,
@@ -221,7 +223,7 @@ def client(graph):
     # GuardianLoop
     api_module._guardian_loop = None
 
-    with patch("api.PERCEPTION_ENABLED", True):
+    with patch("consciousness_sea.interfaces.api.PERCEPTION_ENABLED", True):
         c = TestClient(api_module.app)
         yield c
 
@@ -241,7 +243,7 @@ class TestPerceptionStatusAPI:
 
     def test_perception_status(self, client):
         """GET /api/v1/perception/status 返回正确格式"""
-        with patch("api.PERCEPTION_ENABLED", True):
+        with patch("consciousness_sea.interfaces.api.PERCEPTION_ENABLED", True):
             response = client.get("/api/v1/perception/status")
 
         assert response.status_code == 200
@@ -254,11 +256,11 @@ class TestPerceptionStatusAPI:
 
     def test_perception_status_disabled(self, client):
         """PERCEPTION_ENABLED=False 时返回默认值"""
-        import api as api_module
+        api_module = sys.modules['consciousness_sea.interfaces.api']
         old_pm = api_module._perception_manager
         api_module._perception_manager = None
 
-        with patch("api.PERCEPTION_ENABLED", False):
+        with patch("consciousness_sea.interfaces.api.PERCEPTION_ENABLED", False):
             response = client.get("/api/v1/perception/status")
 
         assert response.status_code == 200
@@ -273,7 +275,7 @@ class TestPerceptionSeedsAPI:
 
     def test_list_perception_seeds(self, client):
         """GET /api/v1/perception/seeds 返回感知元种子列表"""
-        with patch("api.PERCEPTION_ENABLED", True):
+        with patch("consciousness_sea.interfaces.api.PERCEPTION_ENABLED", True):
             response = client.get("/api/v1/perception/seeds")
 
         assert response.status_code == 200
@@ -283,7 +285,7 @@ class TestPerceptionSeedsAPI:
 
     def test_list_perception_seeds_filter(self, client):
         """GET /api/v1/perception/seeds?channel=visual 过滤正确"""
-        with patch("api.PERCEPTION_ENABLED", True):
+        with patch("consciousness_sea.interfaces.api.PERCEPTION_ENABLED", True):
             response = client.get("/api/v1/perception/seeds?channel=visual")
 
         assert response.status_code == 200
@@ -293,7 +295,7 @@ class TestPerceptionSeedsAPI:
 
     def test_get_perception_seed_detail(self, client):
         """GET /api/v1/perception/seeds/{label} 返回详情"""
-        with patch("api.PERCEPTION_ENABLED", True):
+        with patch("consciousness_sea.interfaces.api.PERCEPTION_ENABLED", True):
             response = client.get("/api/v1/perception/seeds/percept:visual:red")
 
         assert response.status_code == 200
@@ -304,7 +306,7 @@ class TestPerceptionSeedsAPI:
 
     def test_get_perception_seed_not_found(self, client):
         """GET /api/v1/perception/seeds/{label} 不存在时返回 404"""
-        with patch("api.PERCEPTION_ENABLED", True):
+        with patch("consciousness_sea.interfaces.api.PERCEPTION_ENABLED", True):
             response = client.get("/api/v1/perception/seeds/percept:not:exist")
 
         assert response.status_code == 404
@@ -315,7 +317,7 @@ class TestPerceptionBindingsAPI:
 
     def test_list_perception_bindings(self, client):
         """GET /api/v1/perception/bindings 返回绑定边列表"""
-        with patch("api.PERCEPTION_ENABLED", True):
+        with patch("consciousness_sea.interfaces.api.PERCEPTION_ENABLED", True):
             response = client.get("/api/v1/perception/bindings")
 
         assert response.status_code == 200
@@ -324,7 +326,7 @@ class TestPerceptionBindingsAPI:
 
     def test_list_perception_bindings_filter(self, client):
         """GET /api/v1/perception/bindings?channel=visual 过滤正确"""
-        with patch("api.PERCEPTION_ENABLED", True):
+        with patch("consciousness_sea.interfaces.api.PERCEPTION_ENABLED", True):
             response = client.get("/api/v1/perception/bindings?channel=visual")
 
         assert response.status_code == 200
@@ -337,7 +339,7 @@ class TestPerceptionEventsAPI:
 
     def test_list_perception_events(self, client):
         """GET /api/v1/perception/events?limit=20 返回事件列表"""
-        with patch("api.PERCEPTION_ENABLED", True):
+        with patch("consciousness_sea.interfaces.api.PERCEPTION_ENABLED", True):
             response = client.get("/api/v1/perception/events?limit=20")
 
         assert response.status_code == 200
@@ -350,7 +352,7 @@ class TestPerceptionAlignAPI:
 
     def test_trigger_alignment(self, client):
         """POST /api/v1/perception/align 执行一次多模态对齐"""
-        with patch("api.PERCEPTION_ENABLED", True):
+        with patch("consciousness_sea.interfaces.api.PERCEPTION_ENABLED", True):
             response = client.post("/api/v1/perception/align")
 
         assert response.status_code == 200
@@ -360,12 +362,12 @@ class TestPerceptionAlignAPI:
 
     def test_trigger_alignment_conflict(self, client):
         """POST /api/v1/perception/align 多模态对齐正在运行时返回 409"""
-        import api as api_module
+        api_module = sys.modules['consciousness_sea.interfaces.api']
         pm = api_module._perception_manager
         if pm and pm._multimodal_aligner is not None:
             pm._multimodal_aligner._running = True
             try:
-                with patch("api.PERCEPTION_ENABLED", True):
+                with patch("consciousness_sea.interfaces.api.PERCEPTION_ENABLED", True):
                     response = client.post("/api/v1/perception/align")
                 assert response.status_code == 409
             finally:

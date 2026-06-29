@@ -12,15 +12,17 @@ Phase 2 业力边界裁剪测试 (T3.3)
 
 import sqlite3
 import sys
-import os
+import pathlib
 import logging
 from pathlib import Path
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_root = pathlib.Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(_root))
+sys.path.insert(0, str(_root / "backend" / "src"))
 
-from core.graph_db import GraphDB
-from core.karma_cleaner import KarmaCleaner
-from core.connection_pool import ConnectionPool
+from consciousness_sea.domain.graph_db import GraphDB
+from consciousness_sea.infrastructure.karma_cleaner import KarmaCleaner
+from consciousness_sea.infrastructure.connection_pool import ConnectionPool
 
 
 def _build_test_db(db_path: str) -> None:
@@ -238,7 +240,7 @@ class TestDeleteLogFormat:
         pool = ConnectionPool(db_path, pool_size=2)
         cleaner = KarmaCleaner(pool)
 
-        with caplog.at_level(logging.INFO, logger='core.karma_cleaner'):
+        with caplog.at_level(logging.INFO, logger='consciousness_sea.infrastructure.karma_cleaner'):
             cleaner.cleanup_low_weight_edges()
 
         # 验证日志包含关键信息

@@ -16,19 +16,21 @@ from __future__ import annotations
 
 import sqlite3
 import sys
-import os
+import pathlib
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_root = pathlib.Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(_root))
+sys.path.insert(0, str(_root / "backend" / "src"))
 
-from core.graph_db import GraphDB
-from core.router import route, RippleResult, ActivationNode
-from core.answerer import answer_with_expert, answer_from_activation
-from core.verifier import verify, _reset_stopwords_cache
-from core.expert_manager import ExpertManager, ExpertStatus, InferenceResult, _TORCH_AVAILABLE
-from core.cross_validator import CrossValidator, CrossValidationStatus
-from core.expert_reliability import ExpertReliabilityStore
+from consciousness_sea.domain.graph_db import GraphDB
+from consciousness_sea.domain.router import route, RippleResult, ActivationNode
+from consciousness_sea.domain.answerer import answer_with_expert, answer_from_activation
+from consciousness_sea.domain.verifier import verify, _reset_stopwords_cache
+from consciousness_sea.expert.expert_manager import ExpertManager, ExpertStatus, InferenceResult, _TORCH_AVAILABLE
+from consciousness_sea.expert.cross_validator import CrossValidator, CrossValidationStatus
+from consciousness_sea.expert.expert_reliability import ExpertReliabilityStore
 from tests.conftest import MockExpertManager
 
 
@@ -409,7 +411,7 @@ class TestE2EScenario8:
     def test_pytorch_not_installed_system_starts(self):
         """PyTorch未安装时系统正常启动"""
         # ExpertManager 应可正常 import
-        from core.expert_manager import ExpertManager
+        from consciousness_sea.expert.expert_manager import ExpertManager
         # 使用 expert_backend="pytorch" 确保只尝试 PyTorch 后端
         em = ExpertManager(expert_backend="pytorch")
         assert em.expert_available is False
@@ -453,7 +455,7 @@ class TestE2EScenario8:
     def test_pytorch_not_installed_no_import_error(self):
         """PyTorch未安装时 import 不抛出 ImportError"""
         try:
-            import core.expert_manager
+            import consciousness_sea.expert.expert_manager
             assert True  # import 成功
         except ImportError:
             assert False, "Importing expert_manager should not raise ImportError"

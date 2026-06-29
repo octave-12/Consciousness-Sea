@@ -31,3 +31,9 @@ test_output*.txt
 *_test_output.txt
 *_output.txt
 api_fail_detail.txt
+frontend/node_modules/
+frontend/dist/
+backend/config/.env
+debug_meta_seeds.txt
+checkpoints/
+data/

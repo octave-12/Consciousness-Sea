@@ -12,17 +12,19 @@ Phase 2 参数统计评估测试 (T8.3)
 
 import sqlite3
 import sys
-import os
+import pathlib
 import json
 from pathlib import Path
 from datetime import datetime, timezone
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_root = pathlib.Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(_root))
+sys.path.insert(0, str(_root / "backend" / "src"))
 
-from core.graph_db import GraphDB
-from core.param_evaluator import ParamEvaluator
-from core.connection_pool import ConnectionPool
-from core.config import RIPPLE_DECAY, DOMAIN_THRESHOLD, CONFIDENCE_HIGH
+from consciousness_sea.domain.graph_db import GraphDB
+from consciousness_sea.infrastructure.param_evaluator import ParamEvaluator
+from consciousness_sea.infrastructure.connection_pool import ConnectionPool
+from consciousness_sea.infrastructure.config import RIPPLE_DECAY, DOMAIN_THRESHOLD, CONFIDENCE_HIGH
 
 
 def _build_test_db(db_path: str) -> None:
@@ -377,7 +379,7 @@ class TestEvaluatorDoesNotModifyConfig:
         conn.close()
 
         # 记录评估前的配置值
-        from core import config
+        from consciousness_sea.infrastructure import config
         decay_before = config.RIPPLE_DECAY
         threshold_before = config.DOMAIN_THRESHOLD
         confidence_before = config.CONFIDENCE_HIGH

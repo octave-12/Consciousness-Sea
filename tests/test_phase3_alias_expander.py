@@ -11,22 +11,24 @@ from __future__ import annotations
 import json
 import sqlite3
 import sys
-import os
+import pathlib
 from unittest.mock import patch
 
 import pytest
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_root = pathlib.Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(_root))
+sys.path.insert(0, str(_root / "backend" / "src"))
 
-from core.alias_expander import (
+from consciousness_sea.learning.alias_expander import (
     AliasExpander,
     AliasExpansionResult,
     BackrefEvent,
     BackrefStats,
     BackrefStatus,
 )
-from core.graph_db import GraphDB
-from core.config import (
+from consciousness_sea.domain.graph_db import GraphDB
+from consciousness_sea.infrastructure.config import (
     ALIAS_AUTO_EXTEND,
     ALIAS_BACK_REF_THRESHOLD,
     ALIAS_CONFLICT_MARGIN,
@@ -357,7 +359,7 @@ class TestAliasExpander:
 
     def test_alias_disabled(self, expander, graph):
         """ALIAS_AUTO_EXTEND=False 时仅记录统计不修改 seeds 表"""
-        with patch("core.alias_expander.ALIAS_AUTO_EXTEND", False):
+        with patch("consciousness_sea.learning.alias_expander.ALIAS_AUTO_EXTEND", False):
             # 记录足够回指事件
             for _ in range(10):
                 results = expander.record_backref_events(
