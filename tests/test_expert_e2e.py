@@ -14,23 +14,24 @@ T-025: 端到端场景验收测试
 
 from __future__ import annotations
 
+import pathlib
 import sqlite3
 import sys
-import pathlib
-from pathlib import Path
-from unittest.mock import patch, MagicMock
 
 _root = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_root))
 sys.path.insert(0, str(_root / "backend" / "src"))
 
+from consciousness_sea.domain.answerer import answer_from_activation, answer_with_expert
 from consciousness_sea.domain.graph_db import GraphDB
-from consciousness_sea.domain.router import route, RippleResult, ActivationNode
-from consciousness_sea.domain.answerer import answer_with_expert, answer_from_activation
-from consciousness_sea.domain.verifier import verify, _reset_stopwords_cache
-from consciousness_sea.expert.expert_manager import ExpertManager, ExpertStatus, InferenceResult, _TORCH_AVAILABLE
-from consciousness_sea.expert.cross_validator import CrossValidator, CrossValidationStatus
-from consciousness_sea.expert.expert_reliability import ExpertReliabilityStore
+from consciousness_sea.domain.router import RippleResult, route
+from consciousness_sea.domain.verifier import _reset_stopwords_cache, verify
+from consciousness_sea.expert.cross_validator import CrossValidationStatus, CrossValidator
+from consciousness_sea.expert.expert_manager import (
+    _TORCH_AVAILABLE,
+    ExpertManager,
+)
+
 from tests.conftest import MockExpertManager
 
 
@@ -455,7 +456,7 @@ class TestE2EScenario8:
     def test_pytorch_not_installed_no_import_error(self):
         """PyTorch未安装时 import 不抛出 ImportError"""
         try:
-            import consciousness_sea.expert.expert_manager
+            import consciousness_sea.expert.expert_manager  # noqa: F401
             assert True  # import 成功
         except ImportError:
             assert False, "Importing expert_manager should not raise ImportError"

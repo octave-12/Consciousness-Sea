@@ -14,11 +14,10 @@ Phase 3 端到端场景验收测试
 from __future__ import annotations
 
 import json
+import pathlib
 import sqlite3
 import sys
-import pathlib
 import time
-from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -27,24 +26,15 @@ _root = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_root))
 sys.path.insert(0, str(_root / "backend" / "src"))
 
-from consciousness_sea.learning.alias_expander import AliasExpander, BackrefEvent, BackrefStatus
-from consciousness_sea.learning.seed_candidate import SeedCandidateManager, CandidateStatus
-from consciousness_sea.learning.cold_start import ColdStartManager
-from consciousness_sea.learning.checkpoint import CheckpointManager, CheckpointSource
 from consciousness_sea.domain.graph_db import GraphDB
 from consciousness_sea.infrastructure.config import (
-    ALIAS_AUTO_EXTEND,
-    ALIAS_BACK_REF_THRESHOLD,
-    ALIAS_CONFLICT_MARGIN,
-    ALIAS_MIN_COUNT,
-    CANDIDATE_SEED_AUTO_CREATE,
     CANDIDATE_SEED_MIN_COUNT,
     CANDIDATE_SEED_PROMOTE_COUNT,
-    COLD_START_ENABLED,
-    COLD_START_QUERIES,
-    CHECKPOINT_RETAIN_COUNT,
 )
-
+from consciousness_sea.learning.alias_expander import AliasExpander, BackrefEvent
+from consciousness_sea.learning.checkpoint import CheckpointManager
+from consciousness_sea.learning.cold_start import ColdStartManager
+from consciousness_sea.learning.seed_candidate import SeedCandidateManager
 
 # ═══════════════════════════════════════════════════════════
 #  Fixtures
@@ -193,7 +183,7 @@ class TestScenario1AliasExpansion:
         # 此时 ref_count=8, total_count=10, rate=0.8 >= 0.6
         # 但 total_count=10 >= 5，应已触发自动添加
         # 检查最后一次有 target_seed 的结果
-        last_result = results[-1] if results else None
+        results[-1] if results else None
         # 由于8次回指后 rate=1.0 > 0.6, count=8 >= 5，应在第5次时就已触发
         # 但第5次时 rate=1.0, count=5，满足条件
 

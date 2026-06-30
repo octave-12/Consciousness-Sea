@@ -9,20 +9,19 @@
 - query_text 截断
 """
 
+import pathlib
 import sqlite3
 import sys
-import pathlib
-from unittest.mock import patch
 
 _root = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_root))
 sys.path.insert(0, str(_root / "backend" / "src"))
 
 from consciousness_sea.domain.query_history import (
-    ensure_history_table,
-    record_query,
-    get_history,
     MAX_QUERY_TEXT_LENGTH,
+    ensure_history_table,
+    get_history,
+    record_query,
 )
 
 

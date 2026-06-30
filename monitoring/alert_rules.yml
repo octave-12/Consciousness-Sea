@@ -1,0 +1,56 @@
+groups:
+  - name: consciousness_sea_alerts
+    rules:
+      - alert: HighErrorRate
+        expr: rate(http_requests_total{status=~"5.."}[5m]) / rate(http_requests_total[5m]) > 0.05
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "识海 API 错误率过高"
+          description: "5xx 错误率超过 5%，当前值: {{ $value | humanizePercentage }}"
+
+      - alert: HighLatencyP99
+        expr: histogram_quantile(0.99, rate(http_request_duration_seconds_bucket[5m])) > 0.5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "识海 API P99 延迟过高"
+          description: "P99 延迟超过 500ms，当前值: {{ $value }}s"
+
+      - alert: LowQPS
+        expr: rate(http_requests_total[5m]) < 10
+        for: 10m
+        labels:
+          severity: info
+        annotations:
+          summary: "识海 API QPS 过低"
+          description: "QPS 低于 10，当前值: {{ $value }}"
+
+      - alert: DatabaseConnectionPoolExhausted
+        expr: consciousness_sea_pool_active_connections >= consciousness_sea_pool_max_connections
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "数据库连接池耗尽"
+          description: "活跃连接数已达到最大连接数"
+
+      - alert: GuardianLoopStalled
+        expr: time() - consciousness_sea_guardian_last_run_timestamp > 600
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "守护循环停滞"
+          description: "守护循环超过 10 分钟未运行"
+
+      - alert: RateLimiterRejections
+        expr: rate(consciousness_sea_rate_limiter_rejections_total[5m]) > 10
+        for: 3m
+        labels:
+          severity: warning
+        annotations:
+          summary: "限流器拒绝率过高"
+          description: "每秒超过 10 次请求被限流拒绝"

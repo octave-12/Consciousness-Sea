@@ -36,7 +36,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
-from .expert_reliability import ExpertReliabilityStore, DEFAULT_RELIABILITY
+from .expert_reliability import DEFAULT_RELIABILITY, ExpertReliabilityStore
 
 log = logging.getLogger(__name__)
 
@@ -345,8 +345,8 @@ class ExpertManager:
 
         # ── httpx 不可用，使用 urllib.request 备选 ──
         try:
-            import urllib.request
             import json as _json
+            import urllib.request
 
             req = urllib.request.Request(
                 f"{self._ollama_base_url}/api/tags",

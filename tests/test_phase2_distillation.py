@@ -9,10 +9,10 @@ Phase 2 提炼池测试 (T6.2)
 - 提炼池状态查询
 """
 
+import json
+import pathlib
 import sqlite3
 import sys
-import pathlib
-import json
 from pathlib import Path
 
 _root = pathlib.Path(__file__).resolve().parent.parent
@@ -20,9 +20,9 @@ sys.path.insert(0, str(_root))
 sys.path.insert(0, str(_root / "backend" / "src"))
 
 from consciousness_sea.domain.graph_db import GraphDB
-from consciousness_sea.learning.distillation_pool import DistillationPool
-from consciousness_sea.infrastructure.karma_cleaner import KarmaCleaner
 from consciousness_sea.infrastructure.connection_pool import ConnectionPool
+from consciousness_sea.infrastructure.karma_cleaner import KarmaCleaner
+from consciousness_sea.learning.distillation_pool import DistillationPool
 
 
 def _build_test_db(db_path: str) -> None:

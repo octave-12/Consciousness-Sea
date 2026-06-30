@@ -14,10 +14,10 @@ Phase 6 AudioAnchor 单元测试
 from __future__ import annotations
 
 import math
-import sys
 import pathlib
+import sys
 import time
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -25,8 +25,11 @@ _root = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_root))
 sys.path.insert(0, str(_root / "backend" / "src"))
 
-from consciousness_sea.perception.audio_anchor import AudioAnchor, AudioFeatures, _validate_freq_threshold
-
+from consciousness_sea.perception.audio_anchor import (
+    AudioAnchor,
+    AudioFeatures,
+    _validate_freq_threshold,
+)
 
 # ═══════════════════════════════════════════════════════════
 #  Fixtures

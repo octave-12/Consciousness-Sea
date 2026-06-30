@@ -1,0 +1,98 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint-and-typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.lock
+          pip install -e ".[dev]"
+
+      - name: Ruff check
+        run: python -m ruff check backend/src/consciousness_sea/
+
+      - name: Ruff format check
+        run: python -m ruff format --check backend/src/consciousness_sea/
+
+      - name: Mypy type check
+        run: python -m mypy backend/src/consciousness_sea/ --ignore-missing-imports
+
+  test:
+    runs-on: ubuntu-latest
+    needs: lint-and-typecheck
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.lock
+          pip install -e ".[dev]"
+
+      - name: Run tests
+        run: python -m pytest tests/ -v --tb=short --cov=consciousness_sea --cov-report=term-missing
+        env:
+          PYTHONPATH: backend/src
+
+      - name: Check test coverage
+        run: |
+          python -m pytest tests/ --cov=consciousness_sea --cov-fail-under=70 --no-cov-report -q
+        env:
+          PYTHONPATH: backend/src
+
+  security-scan:
+    runs-on: ubuntu-latest
+    needs: lint-and-typecheck
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.lock
+          pip install pip-audit
+
+      - name: Security audit
+        run: pip-audit -r requirements.lock
+        continue-on-error: true
+
+  docker-build:
+    runs-on: ubuntu-latest
+    needs: [test, security-scan]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: docker build -t consciousness-sea:${{ github.sha }} .
+
+      - name: Test Docker container
+        run: |
+          docker run -d --name test-container -p 8111:8111 consciousness-sea:${{ github.sha }}
+          sleep 5
+          curl -f http://localhost:8111/health || exit 1
+          docker stop test-container

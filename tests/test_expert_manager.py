@@ -19,23 +19,21 @@ T-021: ExpertManager 单元测试（Mock GPU）
 
 from __future__ import annotations
 
-import sys
 import pathlib
-import threading
+import sys
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 _root = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_root))
 sys.path.insert(0, str(_root / "backend" / "src"))
 
 from consciousness_sea.expert.expert_manager import (
+    _PEFT_AVAILABLE,
+    _TORCH_AVAILABLE,
     ExpertManager,
     ExpertStatus,
     InferenceResult,
-    _TORCH_AVAILABLE,
-    _PEFT_AVAILABLE,
-    _HTTPX_AVAILABLE,
 )
 
 

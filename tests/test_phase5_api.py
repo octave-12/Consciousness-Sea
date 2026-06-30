@@ -13,26 +13,24 @@ Phase 5 API 端点测试
 
 from __future__ import annotations
 
-import json
 import pathlib
 import sqlite3
 import sys
 from datetime import datetime, timezone
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent / 'backend' / 'src'))
 
-from fastapi.testclient import TestClient
-
 from consciousness_sea.domain.graph_db import GraphDB
-from consciousness_sea.metacognition.cognitive_goal import CognitiveGoalManager, GoalType, GoalStatus
-from consciousness_sea.metacognition.curiosity_engine import CuriosityEngine, CuriosityEngineStatus
+from consciousness_sea.metacognition.cognitive_goal import (
+    CognitiveGoalManager,
+)
+from consciousness_sea.metacognition.curiosity_engine import CuriosityEngine
 from consciousness_sea.metacognition.guardian_loop import GuardianLoop
-from consciousness_sea.infrastructure.config import COGNITIVE_GOAL_ENABLED, CURIOSITY_ENGINE_ENABLED
-
+from fastapi.testclient import TestClient
 
 # ═══════════════════════════════════════════════════════════
 #  Fixtures
@@ -205,8 +203,10 @@ def graph():
 @pytest.fixture
 def client(graph):
     """创建 TestClient，注入 mock 的连接池和好奇心引擎"""
-    import consciousness_sea.interfaces.api as api  # 触发 api.app 模块导入
     api_module = sys.modules['consciousness_sea.interfaces.api']
+
+    saved_overrides = dict(api_module.app.dependency_overrides)
+    api_module.app.dependency_overrides.clear()
 
     # 创建 mock 连接池
     mock_pool = MagicMock()
@@ -264,6 +264,7 @@ def client(graph):
     api_module._goal_mgr = None
     api_module._curiosity_engine = None
     api_module._observer = None
+    api_module.app.dependency_overrides.update(saved_overrides)
 
 
 def _insert_goal_via_api_db(graph, goal_id="goal_api_test", domain="医学",

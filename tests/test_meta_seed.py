@@ -14,9 +14,9 @@ Phase 4 MetaSeedManager 单元测试
 from __future__ import annotations
 
 import json
+import pathlib
 import sqlite3
 import sys
-import pathlib
 from unittest.mock import patch
 
 import pytest
@@ -25,27 +25,22 @@ _root = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_root))
 sys.path.insert(0, str(_root / "backend" / "src"))
 
-from consciousness_sea.metacognition.meta_seed import (
-    MetaSeedManager,
-    MetaSeedData,
-    MetaSeedCategory,
-    MetaSeedStatus,
-    DOMAIN_MONITOR_DEFAULT_METRICS,
-    RELATION_QUALITY_DEFAULT_METRICS,
-    SYSTEM_MONITOR_DEFAULT_METRICS,
-    SELF_BOUNDARY_DEFAULT_METRICS,
-    PERFORMANCE_MONITOR_DEFAULT_METRICS,
-    SYSTEM_META_SEEDS,
-)
 from consciousness_sea.domain.graph_db import GraphDB
 from consciousness_sea.infrastructure.config import (
-    META_SEED_ENABLED,
+    META_EXPLORE_LOW_CONF_THRESHOLD,
     META_KARMA_DELTA_THRESHOLD,
     META_SEED_DORMANT_CYCLES,
-    META_EXPLORE_LOW_CONF_THRESHOLD,
-    CONFIDENCE_LOW,
 )
-
+from consciousness_sea.metacognition.meta_seed import (
+    DOMAIN_MONITOR_DEFAULT_METRICS,
+    RELATION_QUALITY_DEFAULT_METRICS,
+    SELF_BOUNDARY_DEFAULT_METRICS,
+    SYSTEM_META_SEEDS,
+    SYSTEM_MONITOR_DEFAULT_METRICS,
+    MetaSeedCategory,
+    MetaSeedManager,
+    MetaSeedStatus,
+)
 
 # ═══════════════════════════════════════════════════════════
 #  Fixtures
@@ -209,7 +204,7 @@ class TestMetaSeedGeneration:
         )
         graph.conn.commit()
 
-        created = mgr.generate_domain_monitors()
+        mgr.generate_domain_monitors()
         # 不应创建 meta:元认知
         row = graph.conn.execute(
             "SELECT * FROM meta_seeds WHERE label = 'meta:元认知'"

@@ -11,14 +11,14 @@
 """
 
 import json
+import pathlib
 import sqlite3
 import sys
 import threading
-import pathlib
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from unittest.mock import MagicMock, patch, PropertyMock
+from unittest.mock import patch
 
 import pytest
 
@@ -26,16 +26,16 @@ _root = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_root))
 sys.path.insert(0, str(_root / "backend" / "src"))
 
+from consciousness_sea.domain.graph_db import GraphDB
+from consciousness_sea.expert.expert_manager import ExpertManager
 from consciousness_sea.infrastructure.connection_pool import (
     ConnectionPool,
-    ConnectionPoolExhausted,
     ConnectionPoolClosed,
+    ConnectionPoolExhausted,
 )
-from consciousness_sea.domain.graph_db import GraphDB
-from consciousness_sea.learning.distillation_pool import DistillationPool
-from consciousness_sea.learning.checkpoint import CheckpointManager, RollbackResult
 from consciousness_sea.infrastructure.user_manager import UserManager
-from consciousness_sea.expert.expert_manager import ExpertManager, InferenceResult
+from consciousness_sea.learning.checkpoint import CheckpointManager
+from consciousness_sea.learning.distillation_pool import DistillationPool
 
 sys.path.insert(0, str(_root / "tests"))
 from conftest import MockExpertManager

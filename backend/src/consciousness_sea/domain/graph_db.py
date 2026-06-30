@@ -7,12 +7,21 @@ GraphDB — SQLite 邻接表封装
 边:   karma_edges 表
 """
 
-import sqlite3
 import json
 import logging
+import sqlite3
 import threading
 from typing import Optional
-from consciousness_sea.infrastructure.config import DEFAULT_DB_PATH, ENABLE_FUZZY, FUZZY_EDIT_DISTANCE, BUSY_TIMEOUT_MS, META_SEED_ENABLED, COGNITIVE_GOAL_ENABLED, PERCEPTION_ENABLED
+
+from consciousness_sea.infrastructure.config import (
+    BUSY_TIMEOUT_MS,
+    COGNITIVE_GOAL_ENABLED,
+    DEFAULT_DB_PATH,
+    ENABLE_FUZZY,
+    FUZZY_EDIT_DISTANCE,
+    META_SEED_ENABLED,
+    PERCEPTION_ENABLED,
+)
 
 log = logging.getLogger(__name__)
 DEFAULT_KARMA_WEIGHT = 0.5
@@ -66,6 +75,11 @@ class GraphDB:
             self.conn.close()
             self.conn = None
 
+    def _require_conn(self) -> sqlite3.Connection:
+        if self.conn is None:
+            raise RuntimeError('数据库未连接，请先调用 connect()')
+        return self.conn
+
     def execute_safe(self, sql: str, params: tuple = ()) -> sqlite3.Cursor:
         """线程安全的 SQL 执行代理
 
@@ -101,18 +115,19 @@ class GraphDB:
         使用 CREATE TABLE IF NOT EXISTS 确保幂等，不破坏现有数据。
         使用事务确保原子性，避免频繁 commit 导致锁争用。
         """
+        conn = self._require_conn()
         # 检查表是否已存在（避免不必要的 commit）
-        existing = self.conn.execute(
+        existing = conn.execute(
             "SELECT name FROM sqlite_master WHERE type='table' AND name='karma_edges_personal'"
         ).fetchone()
-        existing_expert = self.conn.execute(
+        existing_expert = conn.execute(
             "SELECT name FROM sqlite_master WHERE type='table' AND name='expert_reliability'"
         ).fetchone()
         if existing and existing_expert:
             return  # 所有表已存在，无需重复创建
 
         # 个人业力层表
-        self.conn.execute("""
+        conn.execute("""
             CREATE TABLE IF NOT EXISTS karma_edges_personal (
                 user_label  TEXT    NOT NULL,
                 source      TEXT    NOT NULL,
@@ -124,17 +139,17 @@ class GraphDB:
                 PRIMARY KEY (user_label, source, target, relation)
             )
         """)
-        self.conn.execute("""
+        conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_karma_personal_user
                 ON karma_edges_personal (user_label)
         """)
-        self.conn.execute("""
+        conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_karma_personal_source
                 ON karma_edges_personal (source)
         """)
 
         # 提炼池表
-        self.conn.execute("""
+        conn.execute("""
             CREATE TABLE IF NOT EXISTS distillation_pool (
                 candidate_id        INTEGER PRIMARY KEY AUTOINCREMENT,
                 canonical_source    TEXT    NOT NULL,
@@ -149,17 +164,17 @@ class GraphDB:
                 updated_at          TEXT    NOT NULL
             )
         """)
-        self.conn.execute("""
+        conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_distill_status
                 ON distillation_pool (status)
         """)
-        self.conn.execute("""
+        conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_distill_canonical
                 ON distillation_pool (canonical_source, canonical_target, canonical_relation)
         """)
 
         # 参数统计表
-        self.conn.execute("""
+        conn.execute("""
             CREATE TABLE IF NOT EXISTS param_stats (
                 stat_id          INTEGER PRIMARY KEY AUTOINCREMENT,
                 query_text       TEXT    NOT NULL,
@@ -174,25 +189,25 @@ class GraphDB:
                 created_at       TEXT    NOT NULL
             )
         """)
-        self.conn.execute("""
+        conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_param_stats_created
                 ON param_stats (created_at)
         """)
 
         # 专家可靠性表（Phase 1 专家组新增）
-        self.conn.execute("""
+        conn.execute("""
             CREATE TABLE IF NOT EXISTS expert_reliability (
                 domain     TEXT PRIMARY KEY,
                 score      REAL NOT NULL CHECK(score >= 0.0 AND score <= 1.0),
                 updated_at TEXT NOT NULL
             )
         """)
-        self.conn.execute("""
+        conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_expert_reliability_domain
                 ON expert_reliability (domain)
         """)
 
-        self.conn.commit()
+        conn.commit()
 
     def ensure_phase3_tables(self) -> None:
         """自动创建 Phase 3 新增表（alias_backref_events, candidate_seeds,
@@ -201,18 +216,19 @@ class GraphDB:
         使用 CREATE TABLE IF NOT EXISTS 确保幂等，不破坏现有数据。
         使用事务确保原子性，避免频繁 commit 导致锁争用。
         """
+        conn = self._require_conn()
         # 检查表是否已存在（避免不必要的 commit）
-        existing = self.conn.execute(
+        existing = conn.execute(
             "SELECT name FROM sqlite_master WHERE type='table' AND name='alias_backref_events'"
         ).fetchone()
-        existing_cold = self.conn.execute(
+        existing_cold = conn.execute(
             "SELECT name FROM sqlite_master WHERE type='table' AND name='user_cold_start'"
         ).fetchone()
         if existing and existing_cold:
             return  # 所有表已存在，无需重复创建
 
         # 别名回指事件表
-        self.conn.execute("""
+        conn.execute("""
             CREATE TABLE IF NOT EXISTS alias_backref_events (
                 source_keyword  TEXT    NOT NULL,
                 target_seed     TEXT    NOT NULL,
@@ -225,17 +241,17 @@ class GraphDB:
                 PRIMARY KEY (source_keyword, target_seed)
             )
         """)
-        self.conn.execute("""
+        conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_alias_backref_keyword
                 ON alias_backref_events (source_keyword)
         """)
-        self.conn.execute("""
+        conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_alias_backref_status
                 ON alias_backref_events (status)
         """)
 
         # 候选种子表
-        self.conn.execute("""
+        conn.execute("""
             CREATE TABLE IF NOT EXISTS candidate_seeds (
                 label           TEXT    PRIMARY KEY,
                 status          TEXT    NOT NULL DEFAULT 'candidate',
@@ -248,30 +264,30 @@ class GraphDB:
                 promoted_seed_id TEXT
             )
         """)
-        self.conn.execute("""
+        conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_candidate_seeds_status
                 ON candidate_seeds (status)
         """)
-        self.conn.execute("""
+        conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_candidate_seeds_last_seen
                 ON candidate_seeds (last_seen_at)
         """)
 
         # 用户冷启动表
-        self.conn.execute("""
+        conn.execute("""
             CREATE TABLE IF NOT EXISTS user_cold_start (
                 user_label  TEXT    PRIMARY KEY,
                 query_count INTEGER NOT NULL DEFAULT 0,
                 updated_at  TEXT    NOT NULL
             )
         """)
-        self.conn.execute("""
+        conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_user_cold_start_label
                 ON user_cold_start (user_label)
         """)
 
         # 检查点元数据表
-        self.conn.execute("""
+        conn.execute("""
             CREATE TABLE IF NOT EXISTS checkpoint_meta (
                 checkpoint_id    TEXT    PRIMARY KEY,
                 tag              TEXT    NOT NULL DEFAULT '',
@@ -282,27 +298,28 @@ class GraphDB:
                 source           TEXT    NOT NULL DEFAULT 'manual'
             )
         """)
-        self.conn.execute("""
+        conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_checkpoint_meta_created
                 ON checkpoint_meta (created_at)
         """)
 
-        self.conn.commit()
+        conn.commit()
 
     def ensure_phase4_tables(self) -> None:
         """自动创建 Phase 4 新增表（meta_seeds, unmatched_queries）
 
         使用 CREATE TABLE IF NOT EXISTS 确保幂等，不破坏现有数据。
         """
+        conn = self._require_conn()
         # 检查表是否已存在（避免不必要的 commit）
-        existing = self.conn.execute(
+        existing = conn.execute(
             "SELECT name FROM sqlite_master WHERE type='table' AND name='meta_seeds'"
         ).fetchone()
         if existing:
             return  # 所有表已存在，无需重复创建
 
         # 元种子表
-        self.conn.execute("""
+        conn.execute("""
             CREATE TABLE IF NOT EXISTS meta_seeds (
                 label           TEXT    PRIMARY KEY NOT NULL,
                 category        TEXT    NOT NULL,
@@ -316,17 +333,17 @@ class GraphDB:
                 updated_at      TEXT    NOT NULL
             )
         """)
-        self.conn.execute("""
+        conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_meta_seeds_category
                 ON meta_seeds (category)
         """)
-        self.conn.execute("""
+        conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_meta_seeds_status
                 ON meta_seeds (status)
         """)
 
         # 未匹配查询词表
-        self.conn.execute("""
+        conn.execute("""
             CREATE TABLE IF NOT EXISTS unmatched_queries (
                 query_text  TEXT    PRIMARY KEY NOT NULL,
                 count       INTEGER NOT NULL DEFAULT 1,
@@ -334,27 +351,28 @@ class GraphDB:
                 last_seen   TEXT    NOT NULL
             )
         """)
-        self.conn.execute("""
+        conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_unmatched_queries_count
                 ON unmatched_queries (count DESC)
         """)
 
-        self.conn.commit()
+        conn.commit()
 
     def ensure_phase5_tables(self) -> None:
         """自动创建 Phase 5 新增表（cognitive_goals, goal_history）
 
         使用 CREATE TABLE IF NOT EXISTS 确保幂等，不破坏现有数据。
         """
+        conn = self._require_conn()
         # 检查表是否已存在（避免不必要的 commit）
-        existing = self.conn.execute(
+        existing = conn.execute(
             "SELECT name FROM sqlite_master WHERE type='table' AND name='cognitive_goals'"
         ).fetchone()
         if existing:
             return  # 所有表已存在，无需重复创建
 
         # 认知目标表
-        self.conn.execute("""
+        conn.execute("""
             CREATE TABLE IF NOT EXISTS cognitive_goals (
                 goal_id             TEXT    PRIMARY KEY NOT NULL,
                 goal_type           TEXT    NOT NULL,
@@ -371,25 +389,25 @@ class GraphDB:
                 updated_at          TEXT    NOT NULL
             )
         """)
-        self.conn.execute("""
+        conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_cognitive_goals_status
                 ON cognitive_goals (status)
         """)
-        self.conn.execute("""
+        conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_cognitive_goals_domain_type
                 ON cognitive_goals (domain, goal_type)
         """)
-        self.conn.execute("""
+        conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_cognitive_goals_priority
                 ON cognitive_goals (priority_weight DESC)
         """)
-        self.conn.execute("""
+        conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_cognitive_goals_domain_type_status
                 ON cognitive_goals (domain, goal_type, status)
         """)
 
         # 目标历史快照表
-        self.conn.execute("""
+        conn.execute("""
             CREATE TABLE IF NOT EXISTS goal_history (
                 history_id      INTEGER PRIMARY KEY AUTOINCREMENT,
                 goal_id         TEXT    NOT NULL,
@@ -401,31 +419,32 @@ class GraphDB:
                 created_at      TEXT    NOT NULL
             )
         """)
-        self.conn.execute("""
+        conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_goal_history_goal_id
                 ON goal_history (goal_id)
         """)
-        self.conn.execute("""
+        conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_goal_history_created_at
                 ON goal_history (created_at)
         """)
 
-        self.conn.commit()
+        conn.commit()
 
     def ensure_phase6_tables(self) -> None:
         """自动创建 Phase 6 新增表（perceptual_seeds, perception_events）
 
         使用 CREATE TABLE IF NOT EXISTS 确保幂等，不破坏现有数据。
         """
+        conn = self._require_conn()
         # 检查表是否已存在（避免不必要的 commit）
-        existing = self.conn.execute(
+        existing = conn.execute(
             "SELECT name FROM sqlite_master WHERE type='table' AND name='perceptual_seeds'"
         ).fetchone()
         if existing:
             return  # 所有表已存在，无需重复创建
 
         # 感知元种子表
-        self.conn.execute("""
+        conn.execute("""
             CREATE TABLE IF NOT EXISTS perceptual_seeds (
                 label               TEXT    PRIMARY KEY NOT NULL,
                 channel             TEXT    NOT NULL,
@@ -438,17 +457,17 @@ class GraphDB:
                 updated_at          TEXT    NOT NULL
             )
         """)
-        self.conn.execute("""
+        conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_perceptual_seeds_channel
                 ON perceptual_seeds (channel)
         """)
-        self.conn.execute("""
+        conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_perceptual_seeds_status
                 ON perceptual_seeds (status)
         """)
 
         # 感知激活事件表
-        self.conn.execute("""
+        conn.execute("""
             CREATE TABLE IF NOT EXISTS perception_events (
                 event_id         INTEGER PRIMARY KEY AUTOINCREMENT,
                 perceptual_seed  TEXT    NOT NULL,
@@ -458,22 +477,23 @@ class GraphDB:
                 processed        INTEGER NOT NULL DEFAULT 0
             )
         """)
-        self.conn.execute("""
+        conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_perception_events_timestamp
                 ON perception_events (timestamp)
         """)
-        self.conn.execute("""
+        conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_perception_events_processed
                 ON perception_events (processed)
         """)
 
-        self.conn.commit()
+        conn.commit()
 
     # ═══════════════════════════════════════════════════════════
 
     def get_seed(self, label: str) -> Optional[dict]:
         """精确匹配单个种子（label 或 alias）"""
-        row = self.conn.execute(
+        conn = self._require_conn()
+        row = conn.execute(
             "SELECT * FROM seeds WHERE label = ?", (label,)
         ).fetchone()
         if row:
@@ -495,6 +515,7 @@ class GraphDB:
         - 模糊匹配（编辑距离，可选）
         - 否定词识别（excluded 的种子跳过）
         """
+        conn = self._require_conn()
         from .tokenizer import tokenize as tokenizer_tokenize
 
         self._ensure_label_index()
@@ -531,7 +552,7 @@ class GraphDB:
             if not seed_label or seed_label in matched:
                 continue
 
-            row = self.conn.execute(
+            row = conn.execute(
                 "SELECT * FROM seeds WHERE label = ? AND type NOT IN ('META', 'PERCEPTUAL')", (seed_label,)
             ).fetchone()
             if row:
@@ -556,9 +577,12 @@ class GraphDB:
         if self._alias_index is not None:  # 快速路径：无锁检查
             return
         with self._cache_lock:  # 慢路径：加锁构建
+            if self.conn is None:
+                return
             if self._alias_index is not None:  # double-check
                 return
             idx = {}
+            assert self.conn is not None
             rows = self.conn.execute(
                 "SELECT label, aliases FROM seeds WHERE aliases != '[]' AND aliases != ''"
             ).fetchall()
@@ -579,8 +603,11 @@ class GraphDB:
         if self._label_index is not None:  # 快速路径：无锁检查
             return
         with self._cache_lock:  # 慢路径：加锁构建
+            if self.conn is None:
+                return
             if self._label_index is not None:  # double-check
                 return
+            assert self.conn is not None
             rows = self.conn.execute("SELECT label FROM seeds").fetchall()
             self._label_index = {r['label'] for r in rows}
             log.debug("label 索引加载完成: %d 条", len(self._label_index))
@@ -620,6 +647,8 @@ class GraphDB:
         if self._edge_count_map is not None:  # 快速路径：无锁检查
             return self._edge_count_map
         with self._cache_lock:  # 慢路径：加锁构建
+            if self.conn is None:
+                return
             if self._edge_count_map is not None:  # double-check
                 return self._edge_count_map
 
@@ -628,6 +657,7 @@ class GraphDB:
                 return self._edge_count_map
 
             edge_count_map: dict[str, int] = {}
+            assert self.conn is not None
             rows = self.conn.execute(
                 "SELECT source, COUNT(*) as cnt FROM karma_edges GROUP BY source"
             ).fetchall()
@@ -646,10 +676,11 @@ class GraphDB:
             source_label: 源节点 label
             exclude_meta: 是否排除 source 以 "meta:" 开头的边（默认 True）
         """
+        conn = self._require_conn()
         if exclude_meta and source_label.startswith("meta:"):
             return []  # 元种子的出边不参与涟漪传播
 
-        rows = self.conn.execute(
+        rows = conn.execute(
             "SELECT * FROM karma_edges WHERE source = ?",
             (source_label,)
         ).fetchall()
@@ -657,17 +688,19 @@ class GraphDB:
 
     def batch_get_seeds(self, labels: list[str]) -> dict[str, dict]:
         """批量获取种子信息（domain, definition）"""
+        conn = self._require_conn()
         if not labels:
             return {}
         placeholders = ','.join('?' * len(labels))
-        rows = self.conn.execute(
+        rows = conn.execute(
             f"SELECT label, domain, definition FROM seeds WHERE label IN ({placeholders})",
             labels
         ).fetchall()
         return {r['label']: {'domain': r['domain'], 'definition': r['definition']} for r in rows}
 
     def get_edge(self, source: str, target: str, relation: str) -> Optional[dict]:
-        row = self.conn.execute(
+        conn = self._require_conn()
+        row = conn.execute(
             "SELECT * FROM karma_edges WHERE source=? AND target=? AND relation=?",
             (source, target, relation)
         ).fetchone()
@@ -681,22 +714,23 @@ class GraphDB:
         新边自动创建，已有边累加 delta。
         边界会裁剪到 [KARMA_MIN, KARMA_MAX]。
         """
-        from consciousness_sea.infrastructure.config import KARMA_MIN, KARMA_MAX
+        conn = self._require_conn()
+        from consciousness_sea.infrastructure.config import KARMA_MAX, KARMA_MIN
 
-        existing = self.conn.execute(
+        existing = conn.execute(
             "SELECT weight FROM karma_edges WHERE source=? AND target=? AND relation=?",
             (source, target, relation)
         ).fetchone()
 
         if existing:
             new_w = max(KARMA_MIN, min(KARMA_MAX, existing[0] + delta))
-            self.conn.execute(
+            conn.execute(
                 "UPDATE karma_edges SET weight=? WHERE source=? AND target=? AND relation=?",
                 (new_w, source, target, relation)
             )
         else:
             new_w = max(KARMA_MIN, min(KARMA_MAX, DEFAULT_KARMA_WEIGHT + delta))
-            self.conn.execute(
+            conn.execute(
                 "INSERT OR IGNORE INTO karma_edges "
                 "(source,target,relation,weight,source_tag) VALUES (?,?,?,?,?)",
                 (source, target, relation, new_w, 'karma_delta')
@@ -724,12 +758,13 @@ class GraphDB:
         Returns:
             True 边保留, False 边被删除（权重低于 KARMA_MIN）
         """
-        from consciousness_sea.infrastructure.config import KARMA_MIN, KARMA_MAX
+        conn = self._require_conn()
+        from consciousness_sea.infrastructure.config import KARMA_MAX, KARMA_MIN
 
         # C-3: 使用 UPSERT 消除并发竞态
         # INSERT 新边（weight = DEFAULT_KARMA_WEIGHT + delta），若冲突则 UPDATE（weight = weight + delta）
         # karma_edges 表有 PRIMARY KEY (source, target, relation)，可直接 ON CONFLICT
-        self.conn.execute(
+        conn.execute(
             "INSERT INTO karma_edges (source, target, relation, weight, source_tag) "
             "VALUES (?, ?, ?, ?, 'karma_delta') "
             "ON CONFLICT (source, target, relation) DO UPDATE "
@@ -739,13 +774,13 @@ class GraphDB:
         )
 
         # Phase 2: 检查是否低于下界 → 自动删除
-        row = self.conn.execute(
+        row = conn.execute(
             "SELECT weight FROM karma_edges WHERE source=? AND target=? AND relation=?",
             (source, target, relation)
         ).fetchone()
 
         if row and row['weight'] < KARMA_MIN:
-            self.conn.execute(
+            conn.execute(
                 "DELETE FROM karma_edges WHERE source=? AND target=? AND relation=?",
                 (source, target, relation)
             )
@@ -777,12 +812,14 @@ class GraphDB:
         Returns:
             True 边保留, False 边被删除
         """
-        from consciousness_sea.infrastructure.config import KARMA_MIN, KARMA_MAX
+        conn = self._require_conn()
         from datetime import datetime, timezone
+
+        from consciousness_sea.infrastructure.config import KARMA_MAX, KARMA_MIN
 
         now = datetime.now(timezone.utc).isoformat()
 
-        self.conn.execute(
+        conn.execute(
             "INSERT INTO karma_edges_personal "
             "(user_label, source, target, relation, weight, source_tag, updated_at) "
             "VALUES (?, ?, ?, ?, ?, 'personal_karma', ?) "
@@ -794,14 +831,14 @@ class GraphDB:
         )
 
         # 低权边检查
-        row = self.conn.execute(
+        row = conn.execute(
             "SELECT weight FROM karma_edges_personal "
             "WHERE user_label=? AND source=? AND target=? AND relation=?",
             (user_label, source, target, relation)
         ).fetchone()
 
         if row and row['weight'] < KARMA_MIN:
-            self.conn.execute(
+            conn.execute(
                 "DELETE FROM karma_edges_personal "
                 "WHERE user_label=? AND source=? AND target=? AND relation=?",
                 (user_label, source, target, relation)
@@ -827,7 +864,8 @@ class GraphDB:
         Returns:
             权重值，不存在返回 None
         """
-        row = self.conn.execute(
+        conn = self._require_conn()
+        row = conn.execute(
             "SELECT weight FROM karma_edges_personal "
             "WHERE user_label=? AND source=? AND target=? AND relation=?",
             (user_label, source, target, relation)
@@ -847,10 +885,11 @@ class GraphDB:
         Returns:
             {(source, target, relation): weight} 映射
         """
+        conn = self._require_conn()
         if not user_label or not source_labels:
             return {}
         placeholders = ','.join('?' * len(source_labels))
-        rows = self.conn.execute(
+        rows = conn.execute(
             f"SELECT source, target, relation, weight FROM karma_edges_personal "
             f"WHERE user_label=? AND source IN ({placeholders})",
             [user_label] + source_labels
@@ -862,8 +901,9 @@ class GraphDB:
     # ═══════════════════════════════════════════════════════════
 
     def stats(self) -> dict:
-        nodes = self.conn.execute("SELECT COUNT(*) FROM seeds").fetchone()[0]
-        edges = self.conn.execute("SELECT COUNT(*) FROM karma_edges").fetchone()[0]
+        conn = self._require_conn()
+        nodes = conn.execute("SELECT COUNT(*) FROM seeds").fetchone()[0]
+        edges = conn.execute("SELECT COUNT(*) FROM karma_edges").fetchone()[0]
         return {'nodes': nodes, 'edges': edges}
 
     def __enter__(self):

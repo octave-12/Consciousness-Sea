@@ -11,17 +11,23 @@
 """
 
 import json
+import pathlib
 import sqlite3
 import sys
-import pathlib
 
 _root = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_root))
 sys.path.insert(0, str(_root / "backend" / "src"))
 
-from consciousness_sea.infrastructure.connection_pool import ConnectionPool
-from consciousness_sea.infrastructure.observer import Observer, StatusData, SeedRankItem, KarmaRankItem, QueryRecord
 from consciousness_sea.infrastructure.config import KARMA_ALERT_THRESHOLD
+from consciousness_sea.infrastructure.connection_pool import ConnectionPool
+from consciousness_sea.infrastructure.observer import (
+    KarmaRankItem,
+    Observer,
+    QueryRecord,
+    SeedRankItem,
+    StatusData,
+)
 
 
 def _build_test_db(db_path: str) -> None:

@@ -19,11 +19,11 @@ Phase 6 PerceptionManager 单元测试
 
 from __future__ import annotations
 
+import pathlib
 import sqlite3
 import sys
-import pathlib
 from datetime import datetime, timezone
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -31,18 +31,16 @@ _root = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_root))
 sys.path.insert(0, str(_root / "backend" / "src"))
 
-from consciousness_sea.perception.perception import (
-    PerceptionManager,
-    PerceptionChannel,
-    PerceptualSeedStatus,
-    PerceptActivationEvent,
-    ConceptActivationEvent,
-    ChannelStatus,
-    PerceptionManagerStatus,
-)
 from consciousness_sea.domain.graph_db import GraphDB
-from consciousness_sea.infrastructure.config import PERCEPTION_ENABLED
-
+from consciousness_sea.perception.perception import (
+    ChannelStatus,
+    ConceptActivationEvent,
+    PerceptActivationEvent,
+    PerceptionChannel,
+    PerceptionManager,
+    PerceptionManagerStatus,
+    PerceptualSeedStatus,
+)
 
 # ═══════════════════════════════════════════════════════════
 #  Fixtures
@@ -249,9 +247,9 @@ class TestPerceptionManagerStartStop:
         with patch("consciousness_sea.perception.perception.PERCEPTION_ENABLED", True), \
              patch("consciousness_sea.perception.visual_anchor.VisualAnchor") as MockVA, \
              patch("consciousness_sea.perception.audio_anchor.AudioAnchor") as MockAA, \
-             patch("consciousness_sea.perception.somatic_anchor.SomaticAnchor") as MockSA, \
-             patch("consciousness_sea.perception.hebbian_binder.HebbianBinder") as MockHB, \
-             patch("consciousness_sea.perception.multimodal_aligner.MultimodalAligner") as MockMA:
+             patch("consciousness_sea.perception.somatic_anchor.SomaticAnchor"), \
+             patch("consciousness_sea.perception.hebbian_binder.HebbianBinder"), \
+             patch("consciousness_sea.perception.multimodal_aligner.MultimodalAligner"):
             MockVA.return_value._mock_mode = True
             MockAA.return_value._mock_mode = True
             pm.start()
@@ -283,9 +281,9 @@ class TestPerceptionManagerStartStop:
         with patch("consciousness_sea.perception.perception.PERCEPTION_ENABLED", True), \
              patch("consciousness_sea.perception.visual_anchor.VisualAnchor") as MockVA, \
              patch("consciousness_sea.perception.audio_anchor.AudioAnchor") as MockAA, \
-             patch("consciousness_sea.perception.somatic_anchor.SomaticAnchor") as MockSA, \
-             patch("consciousness_sea.perception.hebbian_binder.HebbianBinder") as MockHB, \
-             patch("consciousness_sea.perception.multimodal_aligner.MultimodalAligner") as MockMA:
+             patch("consciousness_sea.perception.somatic_anchor.SomaticAnchor"), \
+             patch("consciousness_sea.perception.hebbian_binder.HebbianBinder"), \
+             patch("consciousness_sea.perception.multimodal_aligner.MultimodalAligner"):
             MockVA.return_value._mock_mode = True
             MockAA.return_value._mock_mode = True
             pm.start()

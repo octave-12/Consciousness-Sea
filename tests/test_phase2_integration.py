@@ -10,10 +10,9 @@ Phase 2 端到端验收测试 (T10.2)
 - 场景6：现有 API 和测试不受影响
 """
 
+import pathlib
 import sqlite3
 import sys
-import pathlib
-import json
 from pathlib import Path
 from unittest.mock import patch
 
@@ -22,12 +21,12 @@ sys.path.insert(0, str(_root))
 sys.path.insert(0, str(_root / "backend" / "src"))
 
 from consciousness_sea.domain.graph_db import GraphDB
+from consciousness_sea.domain.router import route
 from consciousness_sea.domain.verifier import apply_karma, verify
-from consciousness_sea.domain.router import route, RippleResult, ActivationNode
+from consciousness_sea.infrastructure.config import COLD_START_QUERIES
+from consciousness_sea.infrastructure.connection_pool import ConnectionPool
 from consciousness_sea.infrastructure.karma_cleaner import KarmaCleaner
 from consciousness_sea.learning.distillation_pool import DistillationPool
-from consciousness_sea.infrastructure.connection_pool import ConnectionPool
-from consciousness_sea.infrastructure.config import COLD_START_QUERIES
 
 
 def _build_test_db(db_path: str) -> None:
@@ -417,10 +416,10 @@ class TestScenario6BackwardCompatibility:
 
         # 记录全局业力初始值
         edge_before = graph.get_edge('感冒', '发热', 'COOCCURS_WITH')
-        weight_before = edge_before['weight'] if edge_before else 0.95
+        edge_before['weight'] if edge_before else 0.95
 
         # 熏习（不传 user_label）
-        modified = apply_karma(result, graph, karma_direction=+1, user_label=None)
+        apply_karma(result, graph, karma_direction=+1, user_label=None)
 
         # 全局业力应改变
         edge_after = graph.get_edge('感冒', '发热', 'COOCCURS_WITH')

@@ -11,9 +11,10 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Optional
 
+from consciousness_sea.infrastructure.config import RELATION_NAMES, TOP_K_PATHS
+
 from .graph_db import GraphDB
-from .router import RippleResult, ActivationNode
-from consciousness_sea.infrastructure.config import RELATION_NAMES, TOP_K_SEEDS, TOP_K_PATHS
+from .router import RippleResult
 
 if TYPE_CHECKING:
     from consciousness_sea.expert.expert_manager import ExpertManager
@@ -190,7 +191,7 @@ def answer_with_expert(
         reliability_score, cross_validation_status, cross_validation_discount 的字典
     """
     from consciousness_sea.expert.context_injector import ContextInjector
-    from consciousness_sea.expert.cross_validator import CrossValidator, CrossValidationStatus
+    from consciousness_sea.expert.cross_validator import CrossValidator
     from consciousness_sea.infrastructure.config import EXPERT_MAX_NEW_TOKENS
 
     # ── 降级条件 1: expert_manager 为 None 或不可用 ──

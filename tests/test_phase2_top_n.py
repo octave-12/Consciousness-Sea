@@ -10,9 +10,9 @@ Phase 2 Top-N 熏习粒度测试 (T2.2)
 - 传播路径为空时返回 modified=0
 """
 
+import pathlib
 import sqlite3
 import sys
-import pathlib
 from unittest.mock import patch
 
 _root = pathlib.Path(__file__).resolve().parent.parent
@@ -20,8 +20,8 @@ sys.path.insert(0, str(_root))
 sys.path.insert(0, str(_root / "backend" / "src"))
 
 from consciousness_sea.domain.graph_db import GraphDB
+from consciousness_sea.domain.router import ActivationNode, RippleResult
 from consciousness_sea.domain.verifier import apply_karma
-from consciousness_sea.domain.router import RippleResult, ActivationNode
 
 
 def _build_test_db(db_path: str) -> None:

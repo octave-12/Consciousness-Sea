@@ -10,9 +10,9 @@ Phase 3 冷启动管理器测试
 
 from __future__ import annotations
 
+import pathlib
 import sqlite3
 import sys
-import pathlib
 from unittest.mock import patch
 
 import pytest
@@ -21,10 +21,9 @@ _root = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_root))
 sys.path.insert(0, str(_root / "backend" / "src"))
 
-from consciousness_sea.learning.cold_start import ColdStartManager, ColdStartState
 from consciousness_sea.domain.graph_db import GraphDB
-from consciousness_sea.infrastructure.config import COLD_START_ENABLED, COLD_START_QUERIES, KARMA_MAX_PAIRS
-
+from consciousness_sea.infrastructure.config import KARMA_MAX_PAIRS
+from consciousness_sea.learning.cold_start import ColdStartManager
 
 # ═══════════════════════════════════════════════════════════
 #  Fixtures

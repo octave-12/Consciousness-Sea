@@ -14,13 +14,17 @@ ColdStartManager — 新用户冷启动管理器
 
 from __future__ import annotations
 
-import threading
 import logging
+import threading
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
-from consciousness_sea.infrastructure.config import COLD_START_ENABLED, COLD_START_QUERIES, KARMA_MAX_PAIRS
 from consciousness_sea.domain.graph_db import GraphDB
+from consciousness_sea.infrastructure.config import (
+    COLD_START_ENABLED,
+    COLD_START_QUERIES,
+    KARMA_MAX_PAIRS,
+)
 
 log = logging.getLogger(__name__)
 

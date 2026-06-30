@@ -11,12 +11,11 @@ Phase 3 检查点与回滚测试
 from __future__ import annotations
 
 import json
+import pathlib
 import sqlite3
 import sys
-import pathlib
 import time
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 
@@ -24,16 +23,13 @@ _root = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_root))
 sys.path.insert(0, str(_root / "backend" / "src"))
 
+from consciousness_sea.domain.graph_db import GraphDB
+from consciousness_sea.infrastructure.config import CHECKPOINT_RETAIN_COUNT
 from consciousness_sea.learning.checkpoint import (
-    CheckpointData,
     CheckpointManager,
     CheckpointMeta,
     CheckpointSource,
-    RollbackResult,
 )
-from consciousness_sea.domain.graph_db import GraphDB
-from consciousness_sea.infrastructure.config import CHECKPOINT_RETAIN_COUNT
-
 
 # ═══════════════════════════════════════════════════════════
 #  Fixtures

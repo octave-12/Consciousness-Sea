@@ -24,19 +24,16 @@ import threading
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Optional
 
 from consciousness_sea.domain.graph_db import GraphDB
 from consciousness_sea.infrastructure.config import (
-    META_SEED_ENABLED,
-    META_KARMA_INITIAL_WEIGHT,
-    META_KARMA_DELTA_THRESHOLD,
-    META_SEED_DORMANT_CYCLES,
-    META_EXPLORE_WINDOW,
-    META_EXPLORE_LOW_CONF_THRESHOLD,
-    GUARDIAN_METRICS_WINDOW,
-    META_ALERT_CONFLICT_THRESHOLD,
     CONFIDENCE_LOW,
+    META_EXPLORE_LOW_CONF_THRESHOLD,
+    META_EXPLORE_WINDOW,
+    META_KARMA_DELTA_THRESHOLD,
+    META_KARMA_INITIAL_WEIGHT,
+    META_SEED_DORMANT_CYCLES,
+    META_SEED_ENABLED,
 )
 
 log = logging.getLogger(__name__)
@@ -154,21 +151,12 @@ class MetaSeedManager:
     # ── 元种子生成 ──────────────────────────────────────
 
     def generate_domain_monitors(self) -> int:
-        """从现有领域标签自动生成领域监控元种子
-
-        流程:
-          1. 查询 seeds 表中不同 domain 值（排除 domain='元认知'）
-          2. 对每个领域标签，检查 meta_seeds 表是否已存在
-          3. 不存在则创建: seeds 表 + meta_seeds 表
-
-        Returns:
-            新创建的元种子数量
-        """
         if not META_SEED_ENABLED:
             return 0
 
         try:
-            rows = self._graph.conn.execute(
+            conn = self._graph._require_conn()
+            rows = conn.execute(
                 "SELECT DISTINCT domain FROM seeds WHERE domain IS NOT NULL AND domain != '元认知'"
             ).fetchall()
         except Exception as e:
@@ -193,21 +181,12 @@ class MetaSeedManager:
         return created
 
     def generate_relation_monitors(self) -> int:
-        """从现有关系类型自动生成关系质量元种子
-
-        流程:
-          1. 查询 karma_edges 表中不同 relation 值
-          2. 对每个关系类型，检查 meta_seeds 表是否已存在
-          3. 不存在则创建: seeds 表 + meta_seeds 表
-
-        Returns:
-            新创建的元种子数量
-        """
         if not META_SEED_ENABLED:
             return 0
 
         try:
-            rows = self._graph.conn.execute(
+            conn = self._graph._require_conn()
+            rows = conn.execute(
                 "SELECT DISTINCT relation FROM karma_edges"
             ).fetchall()
         except Exception as e:
@@ -249,8 +228,7 @@ class MetaSeedManager:
             ):
                 # 设置 definition
                 try:
-                    self._graph.conn.execute(
-                        "UPDATE seeds SET definition = ? WHERE label = ?",
+                    self._graph._require_conn().execute(
                         (desc, label),
                     )
                 except Exception:
@@ -262,19 +240,12 @@ class MetaSeedManager:
         return created
 
     def update_self_boundary(self) -> int:
-        """更新自边界元种子（meta:unknown）的指标
-
-        从 candidate_seeds 表中提取状态为 candidate 的记录，
-        更新 metrics.unmatched_keywords、unmatched_count、top_unmatched。
-
-        Returns:
-            更新的元种子数量（0 或 1）
-        """
         if not META_SEED_ENABLED:
             return 0
 
         try:
-            rows = self._graph.conn.execute(
+            conn = self._graph._require_conn()
+            rows = conn.execute(
                 "SELECT label, count FROM candidate_seeds WHERE status = 'candidate'"
             ).fetchall()
         except Exception as e:
@@ -298,19 +269,12 @@ class MetaSeedManager:
         return 0
 
     def detect_unknown_domains(self) -> int:
-        """探测低置信度高频区域，自动生成未知领域探测元种子
-
-        从 param_stats 表中计算各领域最近 META_EXPLORE_WINDOW 次查询中
-        低置信度频率，超过阈值时创建或更新探测元种子。
-
-        Returns:
-            新创建或更新的元种子数量
-        """
         if not META_SEED_ENABLED:
             return 0
 
         try:
-            rows = self._graph.conn.execute(
+            conn = self._graph._require_conn()
+            rows = conn.execute(
                 "SELECT selected_domains, confidence FROM param_stats "
                 "ORDER BY created_at DESC LIMIT ?",
                 (META_EXPLORE_WINDOW,),
@@ -368,19 +332,12 @@ class MetaSeedManager:
     # ── 元种子查询 ──────────────────────────────────────
 
     def get_meta_seed(self, label: str) -> MetaSeedData | None:
-        """查询单个元种子
-
-        Args:
-            label: 元种子 label（如 "meta:物理"）
-
-        Returns:
-            MetaSeedData 或 None
-        """
         if not META_SEED_ENABLED:
             return None
 
         try:
-            row = self._graph.conn.execute(
+            conn = self._graph._require_conn()
+            row = conn.execute(
                 "SELECT * FROM meta_seeds WHERE label = ?", (label,)
             ).fetchone()
         except Exception as e:
@@ -427,15 +384,6 @@ class MetaSeedManager:
         limit: int = 100,
         offset: int = 0,
     ) -> list[MetaSeedData]:
-        """查询元种子列表
-
-        Args:
-            category: 按类别过滤（可选）
-            status: 按状态过滤（可选）
-
-        Returns:
-            MetaSeedData 列表
-        """
         if not META_SEED_ENABLED:
             return []
 
@@ -454,7 +402,8 @@ class MetaSeedManager:
             where_clause = "WHERE " + " AND ".join(conditions)
 
         try:
-            rows = self._graph.conn.execute(
+            conn = self._graph._require_conn()
+            rows = conn.execute(
                 f"SELECT * FROM meta_seeds {where_clause} ORDER BY label LIMIT ? OFFSET ?",
                 params + [limit, offset],
             ).fetchall()
@@ -498,23 +447,10 @@ class MetaSeedManager:
     # ── 元种子指标更新 ──────────────────────────────────
 
     def update_metrics(self, label: str, metrics: dict) -> bool:
-        """更新元种子指标
-
-        原子操作：指标要么全部更新成功，要么全部不更新。
-        更新前保存 _previous_metrics 用于元业力熏习判定。
-
-        Args:
-            label: 元种子 label
-            metrics: 新的指标字典
-
-        Returns:
-            True 更新成功, False 失败
-        """
         if not META_SEED_ENABLED:
             return False
 
         with self._metrics_lock:
-            # 读取当前指标作为 previous_metrics
             existing = self.get_meta_seed(label)
             if existing is None:
                 return False
@@ -523,7 +459,8 @@ class MetaSeedManager:
             metrics_json = json.dumps(metrics, ensure_ascii=False)
 
             try:
-                self._graph.conn.execute(
+                conn = self._graph._require_conn()
+                conn.execute(
                     "UPDATE meta_seeds SET metrics_json = ?, updated_at = ? WHERE label = ?",
                     (metrics_json, now, label),
                 )
@@ -534,25 +471,13 @@ class MetaSeedManager:
             return True
 
     def increment_metric(self, label: str, key: str, delta: int | float = 1) -> bool:
-        """递增元种子的某个指标
-
-        用于校验器集成时快速递增 conflict_frequency 等指标。
-
-        Args:
-            label: 元种子 label
-            key: 指标键名
-            delta: 递增量
-
-        Returns:
-            True 成功, False 失败
-        """
         if not META_SEED_ENABLED:
             return False
 
         with self._metrics_lock:
             try:
-                # 读取当前指标
-                row = self._graph.conn.execute(
+                conn = self._graph._require_conn()
+                row = conn.execute(
                     "SELECT metrics_json FROM meta_seeds WHERE label = ?", (label,)
                 ).fetchone()
                 if not row:
@@ -573,7 +498,7 @@ class MetaSeedManager:
                 now = datetime.now(timezone.utc).isoformat()
                 metrics_json = json.dumps(metrics, ensure_ascii=False)
 
-                self._graph.conn.execute(
+                conn.execute(
                     "UPDATE meta_seeds SET metrics_json = ?, updated_at = ? WHERE label = ?",
                     (metrics_json, now, label),
                 )
@@ -586,19 +511,6 @@ class MetaSeedManager:
     # ── 元业力边 ──────────────────────────────────────
 
     def check_and_create_meta_karma(self) -> int:
-        """检查所有元种子指标变化，触发元业力熏习
-
-        对每个 active 状态的元种子:
-          1. 比较 current_metrics 和 _previous_metrics
-          2. 若指标变化量 > META_KARMA_DELTA_THRESHOLD:
-             查找相关元种子（同领域、同类型）
-             调用 graph.adjust_karma_atomic() 创建/增强元业力边
-          3. 正向变化（指标恶化）→ delta=+META_KARMA_INITIAL_WEIGHT
-             负向变化（指标改善）→ delta=-META_KARMA_INITIAL_WEIGHT
-
-        Returns:
-            创建或更新的元业力边数量
-        """
         if not META_SEED_ENABLED:
             return 0
 
@@ -607,6 +519,7 @@ class MetaSeedManager:
             return 0
 
         edges_created = 0
+        conn = self._graph._require_conn()
 
         for ms in meta_seeds:
             # 读取当前指标和前一次指标
@@ -652,14 +565,14 @@ class MetaSeedManager:
 
                 for related in related_seeds:
                     try:
-                        self._graph.conn.execute(
+                        conn.execute(
                             "INSERT INTO karma_edges (source, target, relation, weight, source_tag) "
                             "VALUES (?, ?, ?, ?, 'meta_karma') "
                             "ON CONFLICT (source, target, relation) DO UPDATE "
-                            "SET weight = MAX(?, MIN(?, weight + ?))",
+                            "SET weight = MIN(2.0, MAX(0.01, weight + ?))",
                             (ms.label, related.label, "META_CORRELATED",
                              max(0.01, min(2.0, 0.5 + karma_delta)),
-                             0.01, 2.0, karma_delta),
+                             karma_delta),
                         )
                         edges_created += 1
                     except Exception as e:
@@ -680,14 +593,6 @@ class MetaSeedManager:
     # ── 休眠/退役判定 ──────────────────────────────────
 
     def check_dormant_status(self) -> int:
-        """检查元种子休眠/退役状态
-
-        连续 META_SEED_DORMANT_CYCLES 个周期指标无变化 → dormant
-        dormant 状态超过 3 × DORMANT_CYCLES → retired
-
-        Returns:
-            状态变更的元种子数量
-        """
         if not META_SEED_ENABLED:
             return 0
 
@@ -697,6 +602,7 @@ class MetaSeedManager:
 
         changed = 0
         now = datetime.now(timezone.utc).isoformat()
+        conn = self._graph._require_conn()
 
         for ms in meta_seeds:
             if ms.status == MetaSeedStatus.RETIRED:
@@ -722,7 +628,7 @@ class MetaSeedManager:
                 if ms._unchanged_cycles >= META_SEED_DORMANT_CYCLES:
                     # active → dormant
                     try:
-                        self._graph.conn.execute(
+                        conn.execute(
                             "UPDATE meta_seeds SET status = ?, dormant_since = ?, updated_at = ? WHERE label = ?",
                             (MetaSeedStatus.DORMANT.value, now, now, ms.label),
                         )
@@ -739,7 +645,7 @@ class MetaSeedManager:
                 if metrics_changed:
                     # dormant → active（指标变化恢复活跃）
                     try:
-                        self._graph.conn.execute(
+                        conn.execute(
                             "UPDATE meta_seeds SET status = ?, dormant_since = NULL, updated_at = ? WHERE label = ?",
                             (MetaSeedStatus.ACTIVE.value, now, ms.label),
                         )
@@ -756,7 +662,7 @@ class MetaSeedManager:
                     # dormant 超过 3 × DORMANT_CYCLES → retired
                     if ms._unchanged_cycles >= META_SEED_DORMANT_CYCLES * 3:
                         try:
-                            self._graph.conn.execute(
+                            conn.execute(
                                 "UPDATE meta_seeds SET status = ?, updated_at = ? WHERE label = ?",
                                 (MetaSeedStatus.RETIRED.value, now, ms.label),
                             )
@@ -773,14 +679,10 @@ class MetaSeedManager:
     # ── 内部方法 ──────────────────────────────────────
 
     def _persist_tracking_fields(self, ms: MetaSeedData) -> None:
-        """将 _previous_metrics 和 _unchanged_cycles 持久化到数据库
-
-        Args:
-            ms: 元种子数据对象
-        """
         try:
             prev_json = json.dumps(ms._previous_metrics, ensure_ascii=False)
-            self._graph.conn.execute(
+            conn = self._graph._require_conn()
+            conn.execute(
                 "UPDATE meta_seeds SET unchanged_cycles = ?, previous_metrics_json = ?, updated_at = ? WHERE label = ?",
                 (ms._unchanged_cycles, prev_json, datetime.now(timezone.utc).isoformat(), ms.label),
             )
@@ -794,36 +696,15 @@ class MetaSeedManager:
         metrics: dict,
         source_domain: str | None = None,
     ) -> bool:
-        """创建元种子记录（seeds 表 + meta_seeds 表，原子操作）
-
-        流程:
-          1. 检查 label 前缀（不以 "meta:" 开头则自动添加）
-          2. 检查 category 合法性
-          3. 检查 meta_seeds 表是否已存在
-          4. INSERT INTO seeds (label, type='META', domain='元认知', activation=0.0, aliases='[]')
-          5. INSERT INTO meta_seeds (label, category, metrics_json, status='active', ...)
-          6. 若步骤 5 失败 → 回滚步骤 4（DELETE FROM seeds）
-
-        Args:
-            label: 元种子 label
-            category: 类别
-            metrics: 初始指标
-            source_domain: 来源领域/关系/系统标识
-
-        Returns:
-            True 创建成功, False 已存在或创建失败
-        """
-        # 确保 label 前缀
         label = self._ensure_meta_prefix(label)
 
-        # 检查 category 合法性
         if not isinstance(category, MetaSeedCategory):
             log.warning("元种子类别不合法: %s", category)
             return False
 
-        # 检查是否已存在
         try:
-            existing = self._graph.conn.execute(
+            conn = self._graph._require_conn()
+            existing = conn.execute(
                 "SELECT 1 FROM meta_seeds WHERE label = ?", (label,)
             ).fetchone()
             if existing:
@@ -836,9 +717,8 @@ class MetaSeedManager:
         now = datetime.now(timezone.utc).isoformat()
         metrics_json = json.dumps(metrics, ensure_ascii=False)
 
-        # 写入 seeds 表
         try:
-            self._graph.conn.execute(
+            conn.execute(
                 "INSERT OR IGNORE INTO seeds (label, type, domain, activation, aliases) "
                 "VALUES (?, 'META', '元认知', 0.0, '[]')",
                 (label,),
@@ -847,9 +727,8 @@ class MetaSeedManager:
             log.error("元种子 seeds 表写入失败: %s, label=%s", e, label)
             return False
 
-        # 写入 meta_seeds 表
         try:
-            self._graph.conn.execute(
+            conn.execute(
                 "INSERT INTO meta_seeds (label, category, metrics_json, status, source_domain, "
                 "unchanged_cycles, previous_metrics_json, created_at, updated_at) "
                 "VALUES (?, ?, ?, 'active', ?, 0, '{}', ?, ?)",
@@ -859,8 +738,8 @@ class MetaSeedManager:
             log.error("元种子 meta_seeds 表写入失败: %s, label=%s, 回滚 seeds 表记录", e, label)
             # 回滚 seeds 表记录
             try:
-                self._graph.conn.execute(
-                    "DELETE FROM seeds WHERE label = ? AND type = 'META'", (label,)
+                conn.execute(
+                    "DELETE FROM seeds WHERE label = ?", (label,)
                 )
             except Exception:
                 pass
@@ -870,11 +749,9 @@ class MetaSeedManager:
         return True
 
     def _ensure_meta_prefix(self, label: str) -> str:
-        """确保 label 以 "meta:" 前缀开头"""
         if not label.startswith("meta:"):
             return f"meta:{label}"
         return label
 
     def _is_meta_seed_domain(self, domain: str) -> bool:
-        """判断是否为元种子的领域（避免元种子监控元种子）"""
-        return domain == "元认知"
+        return domain == "\u5143\u8ba4\u77e5"

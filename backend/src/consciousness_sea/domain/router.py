@@ -9,16 +9,22 @@
   → 按领域聚合激活值 → 返回激活分布 + Top-K 种子 + 传播路径
 """
 
-from collections import defaultdict, deque
 import threading
+from collections import defaultdict, deque
 from typing import Optional
-from .graph_db import GraphDB
+
 from consciousness_sea.infrastructure.config import (
-    RIPPLE_DEPTH, RIPPLE_DECAY, INITIAL_ACTIVATION,
-    DOMAIN_THRESHOLD, TOP_K_SEEDS, MAX_ACTIVATION,
-    GLOBAL_WEIGHT_RATIO, PERSONAL_WEIGHT_RATIO,
+    DOMAIN_THRESHOLD,
+    GLOBAL_WEIGHT_RATIO,
+    INITIAL_ACTIVATION,
+    MAX_ACTIVATION,
+    PERSONAL_WEIGHT_RATIO,
+    RIPPLE_DECAY,
+    RIPPLE_DEPTH,
+    TOP_K_SEEDS,
 )
 
+from .graph_db import GraphDB
 
 # ═══════════════════════════════════════════════════════════
 #  ColdStartManager 模块级缓存单例
@@ -157,7 +163,7 @@ def route(query: str, graph: GraphDB, user_label: Optional[str] = None,
         # 批量预加载：收集本轮所有边的目标和对应种子信息
         all_targets = set()
         node_edges: dict[str, list[dict]] = {}  # 缓存每节点的出边
-        
+
         current_wave = list(bfs_queue)
         for src_label in current_wave:
             src_node = result.activated.get(src_label)
@@ -167,16 +173,16 @@ def route(query: str, graph: GraphDB, user_label: Optional[str] = None,
             node_edges[src_label] = edges
             for e in edges:
                 all_targets.add(e['target'])
-        
+
         # 批量加载目标种子信息
         target_info = graph.batch_get_seeds(list(all_targets))
-        
+
         next_wave: deque[str] = deque()
         for src_label in current_wave:
             src_node = result.activated.get(src_label)
             if not src_node:
                 continue
-            
+
             for e in node_edges.get(src_label, []):
                 target = e['target']
                 relation = e['relation']
@@ -221,7 +227,7 @@ def route(query: str, graph: GraphDB, user_label: Optional[str] = None,
                     'depth': depth,
                     'ripple_activation': round(ripple_activation, 4),
                 })
-        
+
         bfs_queue = next_wave
 
     # ── 4. 按领域聚合激活值 ────────────────────────────

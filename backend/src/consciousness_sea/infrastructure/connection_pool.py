@@ -16,14 +16,12 @@ from __future__ import annotations
 import logging
 import queue
 import threading
-from typing import Optional
-
 from typing import TYPE_CHECKING
 
 from .config import (
+    BUSY_TIMEOUT_MS,
     CONNECTION_POOL_SIZE,
     CONNECTION_POOL_TIMEOUT,
-    BUSY_TIMEOUT_MS,
     DEFAULT_DB_PATH,
 )
 

@@ -25,32 +25,28 @@ from collections import deque
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Optional
 
 from consciousness_sea.domain.graph_db import GraphDB
-from .meta_seed import MetaSeedManager, MetaSeedCategory, MetaSeedData
 from consciousness_sea.infrastructure.config import (
     COGNITIVE_GOAL_ENABLED,
-    GOAL_LOW_CONF_THRESHOLD,
-    GOAL_LOW_CONF_WINDOW,
-    GOAL_LOW_DENSITY_RATIO,
-    GOAL_HIGH_CONFLICT_THRESHOLD,
-    GOAL_NEW_TERM_THRESHOLD,
-    GOAL_NEW_TERM_WINDOW,
-    GOAL_AUTO_EXPLORE_THRESHOLD,
-    GOAL_MAX_EXPLORE_PER_CYCLE,
     GOAL_DECAY_CYCLES,
     GOAL_DECAY_FACTOR,
-    GOAL_EXPIRE_THRESHOLD,
-    GOAL_USER_ABSENCE_CYCLES,
-    GOAL_POOL_MAX_SIZE,
     GOAL_DECOMPOSABILITY_NORM,
-    GOAL_WEIGHT_USER_RELEVANCE,
+    GOAL_EXPIRE_THRESHOLD,
+    GOAL_HIGH_CONFLICT_THRESHOLD,
+    GOAL_LOW_CONF_THRESHOLD,
+    GOAL_LOW_DENSITY_RATIO,
+    GOAL_NEW_TERM_THRESHOLD,
+    GOAL_POOL_MAX_SIZE,
+    GOAL_USER_ABSENCE_CYCLES,
+    GOAL_WEIGHT_DECOMPOSABILITY,
     GOAL_WEIGHT_SYSTEM_CORENESS,
     GOAL_WEIGHT_UNCERTAINTY,
-    GOAL_WEIGHT_DECOMPOSABILITY,
+    GOAL_WEIGHT_USER_RELEVANCE,
     GUARDIAN_LOOP_INTERVAL,
 )
+
+from .meta_seed import MetaSeedCategory, MetaSeedManager
 
 log = logging.getLogger(__name__)
 

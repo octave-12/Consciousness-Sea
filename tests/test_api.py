@@ -6,23 +6,20 @@ API 接口测试 (TASK-019)
 来使用内存数据库。
 """
 
+import pathlib
 import sqlite3
 import sys
-import pathlib
 
 _root = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_root))
 sys.path.insert(0, str(_root / "backend" / "src"))
 
-from fastapi.testclient import TestClient
-
-from consciousness_sea.interfaces.api import app
 from consciousness_sea.domain.graph_db import GraphDB
-from consciousness_sea.infrastructure.connection_pool import ConnectionPool
-from consciousness_sea.infrastructure.user_manager import UserManager
-from consciousness_sea.infrastructure.session_manager import SessionManager, SessionContext
 from consciousness_sea.infrastructure.observer import Observer
-
+from consciousness_sea.infrastructure.session_manager import SessionManager
+from consciousness_sea.infrastructure.user_manager import UserManager
+from consciousness_sea.interfaces.api import app
+from fastapi.testclient import TestClient
 
 # ═══════════════════════════════════════════════════════════
 #  内存数据库构建
@@ -186,7 +183,13 @@ def _override_get_observer():
 
 
 # 覆盖 FastAPI 依赖注入
-from consciousness_sea.interfaces.api import get_pool, get_session_manager, get_user_manager, get_observer
+from consciousness_sea.interfaces.api import (
+    get_observer,
+    get_pool,
+    get_session_manager,
+    get_user_manager,
+)
+
 app.dependency_overrides[get_pool] = _override_get_pool
 app.dependency_overrides[get_session_manager] = _override_get_session_manager
 app.dependency_overrides[get_user_manager] = _override_get_user_manager
@@ -373,11 +376,11 @@ class TestHealthEndpoint:
     """GET /health 端点测试"""
 
     def test_health_returns_ok(self):
-        """返回 {'status': 'ok'}"""
+        """返回 {'status': 'ok' 或 'degraded'}"""
         resp = client.get('/health')
         assert resp.status_code == 200
         data = resp.json()
-        assert data['status'] == 'ok'
+        assert data['status'] in ('ok', 'degraded')
 
 
 class TestHistoryEndpoint:

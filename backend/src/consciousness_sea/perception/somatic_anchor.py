@@ -9,16 +9,15 @@ psutil 为可选依赖，不可用时优雅降级。
 from __future__ import annotations
 
 import logging
-import math
 import threading
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Optional  # noqa: F401 — 保持与项目风格一致
 
 from consciousness_sea.infrastructure.config import (
-    SOMATIC_SAMPLE_INTERVAL,
-    SOMATIC_HIGH_TEMP_THRESHOLD,
     SOMATIC_HIGH_MEMORY_THRESHOLD,
+    SOMATIC_HIGH_TEMP_THRESHOLD,
+    SOMATIC_SAMPLE_INTERVAL,
     SOMATIC_SLOW_RESPONSE_THRESHOLD,
 )
 

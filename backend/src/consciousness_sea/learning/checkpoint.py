@@ -18,14 +18,17 @@ import json
 import logging
 import os
 import threading
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
-from typing import Optional
 
-from consciousness_sea.infrastructure.config import CHECKPOINT_CRON_HOUR, CHECKPOINT_RETAIN_COUNT, CHECKPOINT_DIR
 from consciousness_sea.domain.graph_db import GraphDB
+from consciousness_sea.infrastructure.config import (
+    CHECKPOINT_CRON_HOUR,
+    CHECKPOINT_DIR,
+    CHECKPOINT_RETAIN_COUNT,
+)
 
 log = logging.getLogger(__name__)
 

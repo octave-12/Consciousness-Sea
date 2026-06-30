@@ -25,27 +25,21 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
 
 from consciousness_sea.domain.graph_db import GraphDB
-from .cognitive_goal import CognitiveGoalManager, GoalType, GoalStatus, CognitiveGoalData
 from consciousness_sea.infrastructure.config import (
+    CURIOSITY_ACTIVATION_THRESHOLD,
     CURIOSITY_ENGINE_ENABLED,
     CURIOSITY_MAX_CONCURRENT,
-    CURIOSITY_EXPLORE_TIMEOUT,
     CURIOSITY_MAX_DEPTH,
-    CURIOSITY_ACTIVATION_THRESHOLD,
-    EXTERNAL_QUERY_ENABLED,
-    EXTERNAL_SOURCE_TYPE,
-    EXTERNAL_QUERY_TIMEOUT,
-    EXTERNAL_QUERY_MAX_RETRIES,
-    EXTERNAL_QUERY_MAX_PER_CYCLE,
-    GOAL_AUTO_EXPLORE_THRESHOLD,
-    GOAL_MAX_EXPLORE_PER_CYCLE,
-    ZHWIKI_FILENAME,
     DEFAULT_DATA_DIR,
-    COGNITIVE_GOAL_ENABLED,
+    EXTERNAL_QUERY_ENABLED,
+    EXTERNAL_QUERY_MAX_RETRIES,
+    EXTERNAL_SOURCE_TYPE,
+    ZHWIKI_FILENAME,
 )
+
+from .cognitive_goal import CognitiveGoalData, CognitiveGoalManager
 
 log = logging.getLogger(__name__)
 
@@ -404,7 +398,9 @@ class CuriosityEngine:
                     if not existing:
                         # 写入提炼池
                         try:
-                            from consciousness_sea.learning.distillation_pool import DistillationPool
+                            from consciousness_sea.learning.distillation_pool import (
+                                DistillationPool,
+                            )
                             distill = DistillationPool(self._graph)
                             distill.submit_candidate(
                                 user_label="system:curiosity",

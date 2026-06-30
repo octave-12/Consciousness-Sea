@@ -17,7 +17,11 @@ import logging
 from dataclasses import dataclass
 
 from consciousness_sea.domain.router import RippleResult
-from consciousness_sea.infrastructure.config import CONTEXT_MAX_TOKENS, CONTEXT_MAX_QUERY_LENGTH, RELATION_NAMES
+from consciousness_sea.infrastructure.config import (
+    CONTEXT_MAX_QUERY_LENGTH,
+    CONTEXT_MAX_TOKENS,
+    RELATION_NAMES,
+)
 
 log = logging.getLogger(__name__)
 

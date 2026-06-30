@@ -13,15 +13,14 @@ import threading
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Optional
 
+from consciousness_sea.domain.graph_db import GraphDB
 from consciousness_sea.infrastructure.config import (
     ALIAS_AUTO_EXTEND,
     ALIAS_BACK_REF_THRESHOLD,
     ALIAS_CONFLICT_MARGIN,
     ALIAS_MIN_COUNT,
 )
-from consciousness_sea.domain.graph_db import GraphDB
 
 log = logging.getLogger(__name__)
 

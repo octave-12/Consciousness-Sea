@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import json
 import logging
-import signal
 import time
 from typing import TYPE_CHECKING
 
@@ -456,7 +455,7 @@ class ParamEvaluator:
 
         for s in stats:
             confidence = s.get('confidence', 0.0)
-            karma_direction = s.get('karma_direction', 0)
+            s.get('karma_direction', 0)
 
             # 在新阈值下重新判定熏习方向
             if confidence >= threshold_value:
@@ -548,7 +547,7 @@ class ParamEvaluator:
             (推荐值, 推荐依据)
         """
         if not candidates:
-            return None, f"无候选值可供评估"
+            return None, "无候选值可供评估"
 
         best = candidates[0]
         for c in candidates[1:]:

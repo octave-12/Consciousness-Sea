@@ -15,22 +15,21 @@ Phase 6 API 端点测试
 
 from __future__ import annotations
 
+import pathlib
 import sqlite3
 import sys
-import pathlib
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent / 'backend' / 'src'))
 
-from fastapi.testclient import TestClient
-
 from consciousness_sea.domain.graph_db import GraphDB
-from consciousness_sea.perception.perception import PerceptionManager, PerceptionChannel, PerceptualSeedStatus
-from consciousness_sea.infrastructure.config import PERCEPTION_ENABLED
-
+from consciousness_sea.perception.perception import (
+    PerceptionManager,
+)
+from fastapi.testclient import TestClient
 
 # ═══════════════════════════════════════════════════════════
 #  Fixtures
@@ -169,7 +168,6 @@ def graph():
 @pytest.fixture
 def client(graph):
     """创建 TestClient，注入 mock 的连接池和 PerceptionManager"""
-    import consciousness_sea.interfaces.api as api  # 触发 api.app 模块导入
     api_module = sys.modules['consciousness_sea.interfaces.api']
 
     # 创建 mock 连接池

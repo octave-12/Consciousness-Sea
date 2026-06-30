@@ -2,10 +2,10 @@
 测试 GraphDB — 使用内存数据库模拟
 """
 
-import sqlite3
-import json
-import sys
 import pathlib
+import sqlite3
+import sys
+
 _root = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_root))
 sys.path.insert(0, str(_root / "backend" / "src"))

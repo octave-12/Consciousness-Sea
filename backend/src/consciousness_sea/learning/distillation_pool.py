@@ -12,7 +12,6 @@ from __future__ import annotations
 import json
 import logging
 from datetime import datetime, timezone
-from typing import Optional
 
 from consciousness_sea.domain.graph_db import GraphDB
 
@@ -71,9 +70,9 @@ class DistillationPool:
         if existing_id is not None:
             # 3. 合并：count +1 (原子), 添加 contributor
             now_str = datetime.now(timezone.utc).isoformat()
-            
+
             # 先获取当前 contributors 以判断是否需要添加
-            row = self._graph.conn.execute(
+            row = self._graph._require_conn().execute(
                 "SELECT count, contributor_users FROM distillation_pool "
                 "WHERE candidate_id=?",
                 (existing_id,)
@@ -84,8 +83,7 @@ class DistillationPool:
                 if user_label not in contributors:
                     contributors.append(user_label)
 
-                # 原子更新: count = count + 1
-                self._graph.conn.execute(
+                self._graph._require_conn().execute(
                     "UPDATE distillation_pool SET count = count + 1, contributor_users=?, "
                     "representative_label=?, updated_at=? "
                     "WHERE candidate_id=?",
@@ -94,8 +92,7 @@ class DistillationPool:
                      now_str, existing_id)
                 )
 
-                # 读取更新后的 count 用于升级检查
-                updated_row = self._graph.conn.execute(
+                updated_row = self._graph._require_conn().execute(
                     "SELECT count FROM distillation_pool WHERE candidate_id=?",
                     (existing_id,)
                 ).fetchone()
@@ -110,7 +107,7 @@ class DistillationPool:
                 return existing_id
 
         # 4. 新建候选
-        cursor = self._graph.conn.execute(
+        cursor = self._graph._require_conn().execute(
             "INSERT INTO distillation_pool "
             "(canonical_source, canonical_target, canonical_relation, "
             " representative_label, count, contributor_users, status, created_at, updated_at) "
@@ -164,25 +161,14 @@ class DistillationPool:
     def _find_equivalent_candidate(
         self, canonical_source: str, canonical_target: str, canonical_relation: str,
     ) -> int | None:
-        """查找提炼池中的等价候选
+        from consciousness_sea.infrastructure.config import (
+            NEIGHBOR_OVERLAP_THRESHOLD,
+            RELATION_EQUIVALENCE_MAP,
+        )
 
-        三重机制（依次尝试）:
-          1. 精确匹配: canonical_source + canonical_target + canonical_relation
-          2. 关系等价匹配: source/target 相同，relation 为等价关系
-          3. 涟漪验证: source/target 1-hop 邻居重叠度 > OVERLAP_THRESHOLD
+        conn = self._graph._require_conn()
 
-        Args:
-            canonical_source: 归一化后的源节点
-            canonical_target: 归一化后的目标节点
-            canonical_relation: 归一化后的关系
-
-        Returns:
-            匹配的 candidate_id，未找到返回 None
-        """
-        from consciousness_sea.infrastructure.config import RELATION_EQUIVALENCE_MAP, NEIGHBOR_OVERLAP_THRESHOLD
-
-        # 1. 精确匹配
-        row = self._graph.conn.execute(
+        row = conn.execute(
             "SELECT candidate_id FROM distillation_pool "
             "WHERE canonical_source=? AND canonical_target=? AND canonical_relation=? "
             "AND status != 'upgraded'",
@@ -191,8 +177,6 @@ class DistillationPool:
         if row:
             return row['candidate_id']
 
-        # 2. 关系等价匹配
-        # 收集所有与 canonical_relation 等价的关系
         equivalent_relations = {canonical_relation}
         for rel, canonical_rel in RELATION_EQUIVALENCE_MAP.items():
             if canonical_rel == canonical_relation:
@@ -200,7 +184,7 @@ class DistillationPool:
 
         if equivalent_relations:
             placeholders = ','.join('?' * len(equivalent_relations))
-            row = self._graph.conn.execute(
+            row = conn.execute(
                 f"SELECT candidate_id FROM distillation_pool "
                 f"WHERE canonical_source=? AND canonical_target=? "
                 f"AND canonical_relation IN ({placeholders}) "
@@ -210,22 +194,18 @@ class DistillationPool:
             if row:
                 return row['candidate_id']
 
-        # 3. 涟漪验证：source/target 1-hop 邻居重叠度
         source_neighbors = self._get_1hop_neighbors(canonical_source)
         target_neighbors = self._get_1hop_neighbors(canonical_target)
 
         if not source_neighbors and not target_neighbors:
             return None
 
-        candidates = self._graph.conn.execute(
+        candidates = conn.execute(
             "SELECT candidate_id, canonical_source, canonical_target "
             "FROM distillation_pool WHERE status != 'upgraded' LIMIT 50"
         ).fetchall()
 
         for c in candidates:
-            if c['candidate_id'] == existing_id:
-                continue
-
             c_source_neighbors = self._get_1hop_neighbors(c['canonical_source'])
             c_target_neighbors = self._get_1hop_neighbors(c['canonical_target'])
 
@@ -249,10 +229,10 @@ class DistillationPool:
         Returns:
             邻居 label 集合
         """
-        rows = self._graph.conn.execute(
+        conn = self._graph._require_conn()
+        rows = conn.execute(
             "SELECT target FROM karma_edges WHERE source=? "
-            "UNION "
-            "SELECT source FROM karma_edges WHERE target=?",
+            "UNION SELECT source FROM karma_edges WHERE target=?",
             (label, label)
         ).fetchall()
         return {r[0] for r in rows}
@@ -282,7 +262,8 @@ class DistillationPool:
         Returns:
             状态字符串，不存在返回 None
         """
-        row = self._graph.conn.execute(
+        conn = self._graph._require_conn()
+        row = conn.execute(
             "SELECT status FROM distillation_pool WHERE candidate_id=?",
             (candidate_id,)
         ).fetchone()
@@ -309,10 +290,10 @@ class DistillationPool:
 
         now = datetime.now(timezone.utc).isoformat()
 
+        conn = self._graph._require_conn()
+
         try:
-            # 1. UPSERT 全局业力边
-            # 若已存在，取 max(现有权重, 初始权重)，不降低
-            self._graph.conn.execute(
+            conn.execute(
                 "INSERT INTO karma_edges (source, target, relation, weight, source_tag) "
                 "VALUES (?, ?, ?, ?, 'distillation_upgrade') "
                 "ON CONFLICT (source, target, relation) DO UPDATE "
@@ -321,8 +302,7 @@ class DistillationPool:
                  DISTILLATION_INITIAL_WEIGHT, DISTILLATION_INITIAL_WEIGHT)
             )
 
-            # 2. 更新候选状态
-            self._graph.conn.execute(
+            conn.execute(
                 "UPDATE distillation_pool SET status='upgraded', upgraded_at=?, updated_at=? "
                 "WHERE candidate_id=?",
                 (now, now, candidate_id)
@@ -349,7 +329,8 @@ class DistillationPool:
                 'cooled_count': int,
             }
         """
-        rows = self._graph.conn.execute(
+        conn = self._graph._require_conn()
+        rows = conn.execute(
             "SELECT status, COUNT(*) as cnt FROM distillation_pool GROUP BY status"
         ).fetchall()
         counts = {r['status']: r['cnt'] for r in rows}
@@ -371,7 +352,8 @@ class DistillationPool:
         Returns:
             重建的候选数量
         """
-        rows = self._graph.conn.execute(
+        conn = self._graph._require_conn()
+        rows = conn.execute(
             "SELECT DISTINCT user_label, source, target, relation "
             "FROM karma_edges_personal"
         ).fetchall()
@@ -408,9 +390,9 @@ class DistillationPool:
             成功升级的候选数量
         """
         upgraded = 0
+        conn = self._graph._require_conn()
         try:
-            # 通过 seeds 表关联查找（精确匹配 domain）
-            rows = self._graph.conn.execute(
+            rows = conn.execute(
                 "SELECT dp.candidate_id, dp.canonical_source, dp.canonical_target, dp.canonical_relation "
                 "FROM distillation_pool dp "
                 "LEFT JOIN seeds s1 ON dp.canonical_source = s1.label "
@@ -423,11 +405,13 @@ class DistillationPool:
             # 如果精确匹配无结果，回退到 LIKE 匹配（转义通配符）
             if not rows:
                 escaped = domain.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-                rows = self._graph.conn.execute(
-                    "SELECT candidate_id, canonical_source, canonical_target, canonical_relation "
-                    "FROM distillation_pool "
-                    "WHERE status = 'pending' AND "
-                    "(canonical_source LIKE ? ESCAPE '\\' OR canonical_target LIKE ? ESCAPE '\\')",
+                rows = conn.execute(
+                    "SELECT dp.candidate_id, dp.canonical_source, dp.canonical_target, dp.canonical_relation "
+                    "FROM distillation_pool dp "
+                    "LEFT JOIN seeds s1 ON dp.canonical_source = s1.label "
+                    "LEFT JOIN seeds s2 ON dp.canonical_target = s2.label "
+                    "WHERE dp.status = 'pending' AND "
+                    "(s1.domain LIKE ? OR s2.domain LIKE ?)",
                     (f"%{escaped}%", f"%{escaped}%"),
                 ).fetchall()
 
@@ -467,11 +451,11 @@ class DistillationPool:
             candidate_id（新建或已有）
         """
         from consciousness_sea.infrastructure.config import DISTILLATION_THRESHOLD
+        conn = self._graph._require_conn()
         now = datetime.now(timezone.utc).isoformat()
 
         try:
-            # 检查是否已有相同 label 的候选
-            existing = self._graph.conn.execute(
+            existing = conn.execute(
                 "SELECT candidate_id, count FROM distillation_pool "
                 "WHERE canonical_source = ? AND canonical_target = ? AND canonical_relation = 'DEFINED_AS'",
                 (label, domain),
@@ -480,7 +464,7 @@ class DistillationPool:
             if existing:
                 # 递增 count
                 new_count = existing["count"] + 1
-                self._graph.conn.execute(
+                conn.execute(
                     "UPDATE distillation_pool SET count = ?, updated_at = ? "
                     "WHERE candidate_id = ?",
                     (new_count, now, existing["candidate_id"]),
@@ -489,7 +473,7 @@ class DistillationPool:
 
             # 新建候选
             representative_label = f"{label} → {domain}"
-            self._graph.conn.execute(
+            conn.execute(
                 "INSERT INTO distillation_pool "
                 "(canonical_source, canonical_target, canonical_relation, "
                 " representative_label, count, contributor_users, status, created_at, updated_at) "
@@ -499,7 +483,7 @@ class DistillationPool:
 
             # 检查是否达到升级阈值
             if 1 >= DISTILLATION_THRESHOLD:
-                candidate_id = self._graph.conn.execute(
+                candidate_id = conn.execute(
                     "SELECT last_insert_rowid()"
                 ).fetchone()[0]
                 try:
@@ -507,7 +491,7 @@ class DistillationPool:
                 except Exception:
                     pass
 
-            return self._graph.conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+            return conn.execute("SELECT last_insert_rowid()").fetchone()[0]
 
         except Exception as e:
             log.warning("外部候选提交失败: %s, label=%s", e, label)

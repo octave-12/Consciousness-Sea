@@ -13,21 +13,19 @@ from collections import deque
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 from consciousness_sea.domain.graph_db import GraphDB
 from consciousness_sea.infrastructure.config import (
     PERCEPTION_ENABLED,
-    PERCEPTION_SHUTDOWN_TIMEOUT,
-    PERCEPTION_CHANNEL_FAILURE_ALERT_THRESHOLD,
 )
 
 if TYPE_CHECKING:
-    from .visual_anchor import VisualAnchor
     from .audio_anchor import AudioAnchor
-    from .somatic_anchor import SomaticAnchor
     from .hebbian_binder import HebbianBinder
     from .multimodal_aligner import MultimodalAligner
+    from .somatic_anchor import SomaticAnchor
+    from .visual_anchor import VisualAnchor
 
 log = logging.getLogger(__name__)
 

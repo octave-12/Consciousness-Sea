@@ -15,10 +15,9 @@ from __future__ import annotations
 
 import sqlite3
 import sys
-import time
-from pathlib import Path
 from datetime import datetime, timezone
-from unittest.mock import patch, MagicMock
+from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -31,32 +30,22 @@ _root = str(Path(__file__).resolve().parent.parent)
 if _root not in sys.path:
     sys.path.insert(0, _root)
 
-from fastapi.testclient import TestClient
-
-from consciousness_sea.perception.perception import (
-    PerceptionManager,
-    PerceptionChannel,
-    PerceptualSeedStatus,
-    PerceptActivationEvent,
-    ConceptActivationEvent,
-    ChannelStatus,
-    PerceptionManagerStatus,
-)
-from consciousness_sea.perception.hebbian_binder import HebbianBinder, HebbianBinderStatus
-from consciousness_sea.perception.multimodal_aligner import MultimodalAligner, AlignmentResult
-from consciousness_sea.perception.visual_anchor import VisualAnchor, VisualFeatures
-from consciousness_sea.perception.audio_anchor import AudioAnchor, AudioFeatures
-from consciousness_sea.perception.somatic_anchor import SomaticAnchor, SomaticFeatures
 from consciousness_sea.domain.graph_db import GraphDB
 from consciousness_sea.infrastructure.config import (
-    PERCEPTION_ENABLED,
-    HEBBIAN_TIME_WINDOW,
     HEBBIAN_LEARNING_RATE,
-    KARMA_MIN,
     KARMA_MAX,
-    MULTIMODAL_ALIGNMENT_ENABLED,
 )
-
+from consciousness_sea.perception.hebbian_binder import HebbianBinder
+from consciousness_sea.perception.multimodal_aligner import MultimodalAligner
+from consciousness_sea.perception.perception import (
+    ConceptActivationEvent,
+    PerceptActivationEvent,
+    PerceptionChannel,
+    PerceptionManager,
+    PerceptionManagerStatus,
+)
+from consciousness_sea.perception.somatic_anchor import SomaticAnchor, SomaticFeatures
+from fastapi.testclient import TestClient
 
 # ═══════════════════════════════════════════════════════════
 #  Fixtures
@@ -245,9 +234,9 @@ class TestScenario1PerceptualSeedAutoGeneration:
         with patch("consciousness_sea.perception.perception.PERCEPTION_ENABLED", True), \
              patch("consciousness_sea.perception.visual_anchor.VisualAnchor") as MockVA, \
              patch("consciousness_sea.perception.audio_anchor.AudioAnchor") as MockAA, \
-             patch("consciousness_sea.perception.somatic_anchor.SomaticAnchor") as MockSA, \
-             patch("consciousness_sea.perception.hebbian_binder.HebbianBinder") as MockHB, \
-             patch("consciousness_sea.perception.multimodal_aligner.MultimodalAligner") as MockMA:
+             patch("consciousness_sea.perception.somatic_anchor.SomaticAnchor"), \
+             patch("consciousness_sea.perception.hebbian_binder.HebbianBinder"), \
+             patch("consciousness_sea.perception.multimodal_aligner.MultimodalAligner"):
             MockVA.return_value._mock_mode = True
             MockAA.return_value._mock_mode = True
             pm.start()
@@ -606,9 +595,9 @@ class TestScenario4ChannelDegradation:
         with patch("consciousness_sea.perception.perception.PERCEPTION_ENABLED", True), \
              patch("consciousness_sea.perception.visual_anchor.VisualAnchor", side_effect=Exception("camera error")), \
              patch("consciousness_sea.perception.audio_anchor.AudioAnchor") as MockAA, \
-             patch("consciousness_sea.perception.somatic_anchor.SomaticAnchor") as MockSA, \
-             patch("consciousness_sea.perception.hebbian_binder.HebbianBinder") as MockHB, \
-             patch("consciousness_sea.perception.multimodal_aligner.MultimodalAligner") as MockMA:
+             patch("consciousness_sea.perception.somatic_anchor.SomaticAnchor"), \
+             patch("consciousness_sea.perception.hebbian_binder.HebbianBinder"), \
+             patch("consciousness_sea.perception.multimodal_aligner.MultimodalAligner"):
             MockAA.return_value._mock_mode = True
             pm.start()
 
@@ -754,7 +743,6 @@ class TestScenario7PerceptionAPI:
     @pytest.fixture
     def client(self, graph, pm):
         """创建 TestClient，注入 mock 连接池和 PerceptionManager"""
-        import consciousness_sea.interfaces.api as api
         api_module = sys.modules['consciousness_sea.interfaces.api']
 
         # 创建 mock 连接池
@@ -900,7 +888,6 @@ class TestScenario7PerceptionAPI:
 
     def test_perception_api_disabled(self, graph):
         """感知功能禁用时各端点返回默认值"""
-        import consciousness_sea.interfaces.api as api
         api_module = sys.modules['consciousness_sea.interfaces.api']
 
         mock_pool = MagicMock()

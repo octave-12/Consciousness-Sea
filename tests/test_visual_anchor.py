@@ -14,11 +14,11 @@ Phase 6 VisualAnchor 单元测试
 
 from __future__ import annotations
 
+import pathlib
 import struct
 import sys
-import pathlib
 import time
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -26,8 +26,11 @@ _root = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_root))
 sys.path.insert(0, str(_root / "backend" / "src"))
 
-from consciousness_sea.perception.visual_anchor import VisualAnchor, VisualFeatures, _clamp_threshold
-
+from consciousness_sea.perception.visual_anchor import (
+    VisualAnchor,
+    VisualFeatures,
+    _clamp_threshold,
+)
 
 # ═══════════════════════════════════════════════════════════
 #  Fixtures
@@ -81,7 +84,7 @@ def _make_dark_frame(width: int = 640, height: int = 480) -> bytes:
 
 def _make_edge_frame(width: int = 640, height: int = 480) -> bytes:
     """创建高对比度图像帧数据（黑白交替，产生大量边缘）"""
-    total_pixels = width * height
+    width * height
     pixels = []
     for y in range(height):
         for x in range(width):

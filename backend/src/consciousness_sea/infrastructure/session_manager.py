@@ -18,10 +18,8 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 from uuid import uuid4
-
-from typing import TYPE_CHECKING
 
 from .connection_pool import ConnectionPool
 

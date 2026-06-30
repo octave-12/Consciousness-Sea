@@ -17,8 +17,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from enum import Enum
 
-SEED_CANDIDATE_INITIAL_WEIGHT = 0.05
-
+from consciousness_sea.domain.graph_db import GraphDB
 from consciousness_sea.infrastructure.config import (
     CANDIDATE_SEED_AUTO_CREATE,
     CANDIDATE_SEED_EXPIRE_DAYS,
@@ -26,7 +25,8 @@ from consciousness_sea.infrastructure.config import (
     CANDIDATE_SEED_PROMOTE_COUNT,
     CANDIDATE_SEED_PURGE_DAYS,
 )
-from consciousness_sea.domain.graph_db import GraphDB
+
+SEED_CANDIDATE_INITIAL_WEIGHT = 0.05
 
 log = logging.getLogger(__name__)
 

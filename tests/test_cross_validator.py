@@ -14,14 +14,14 @@ T-019: CrossValidator 单元测试
 
 from __future__ import annotations
 
-import sys
 import pathlib
+import sys
 
 _root = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_root))
 sys.path.insert(0, str(_root / "backend" / "src"))
 
-from consciousness_sea.expert.cross_validator import CrossValidator, CrossValidationResult, CrossValidationStatus
+from consciousness_sea.expert.cross_validator import CrossValidationStatus, CrossValidator
 
 
 class TestCrossValidatorConsistent:
@@ -315,7 +315,7 @@ class TestCrossValidatorCustomParams:
         """自定义一致性阈值"""
         cv = CrossValidator(consistency_threshold=0.3)
         # 低阈值下更多回答被视为一致
-        result = cv.validate(
+        cv.validate(
             ["感冒需要休息", "感冒需要喝水"],
             ["医学", "常识"],
         )

@@ -23,8 +23,8 @@ from pathlib import Path
 
 from consciousness_sea.infrastructure.config import (
     DEFAULT_DB_PATH,
-    REPAIR_BATCH_SIZE,
     DOMAIN_COVERAGE_TARGET,
+    REPAIR_BATCH_SIZE,
 )
 
 log = logging.getLogger(__name__)

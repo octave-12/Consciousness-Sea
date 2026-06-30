@@ -9,61 +9,112 @@ Phase 2: 熏习粒度 + 业力边界 + 双层业力 + 参数统计
 
 # domain
 from .domain import (
+    ActivationNode,
     GraphDB,
-    route, RippleResult, ActivationNode,
-    answer_from_activation, answer_as_dict, answer_with_expert,
-    verify, apply_karma,
-    tokenize, TokenMatch,
-    infer_domains, infer_single_domain,
-    record_query, get_history,
-)
-
-# infrastructure
-from .infrastructure import (
-    ConnectionPool, ConnectionPoolExhausted,
-    UserManager,
-    SessionManager, SessionContext,
-    Observer, StatusData, SeedRankItem, KarmaRankItem, QueryRecord,
-    KarmaCleaner,
-    ensure_param_stats_table, record_param_stats,
-    ParamEvaluator,
-)
-
-# learning
-from .learning import (
-    DistillationPool,
-    AliasExpander, BackrefEvent, BackrefStats, AliasExpansionResult, BackrefStatus,
-    SeedCandidateManager, CandidateSeed, PromotionResult, CandidateStatus,
-    ColdStartManager, ColdStartState,
-    CheckpointManager, CheckpointMeta, CheckpointData, RollbackResult, CheckpointSource,
+    RippleResult,
+    TokenMatch,
+    answer_as_dict,
+    answer_from_activation,
+    answer_with_expert,
+    apply_karma,
+    get_history,
+    infer_domains,
+    infer_single_domain,
+    record_query,
+    route,
+    tokenize,
+    verify,
 )
 
 # expert
 from .expert import (
-    ExpertManager, ExpertStatus, InferenceResult,
-    ContextInjector, PromptResult,
-    CrossValidator, CrossValidationResult, CrossValidationStatus,
+    ContextInjector,
+    CrossValidationResult,
+    CrossValidationStatus,
+    CrossValidator,
+    ExpertManager,
     ExpertReliabilityStore,
+    ExpertStatus,
+    InferenceResult,
+    PromptResult,
+)
+
+# infrastructure
+from .infrastructure import (
+    ConnectionPool,
+    ConnectionPoolExhausted,
+    KarmaCleaner,
+    KarmaRankItem,
+    Observer,
+    ParamEvaluator,
+    QueryRecord,
+    SeedRankItem,
+    SessionContext,
+    SessionManager,
+    StatusData,
+    UserManager,
+    ensure_param_stats_table,
+    record_param_stats,
+)
+
+# learning
+from .learning import (
+    AliasExpander,
+    AliasExpansionResult,
+    BackrefEvent,
+    BackrefStats,
+    BackrefStatus,
+    CandidateSeed,
+    CandidateStatus,
+    CheckpointData,
+    CheckpointManager,
+    CheckpointMeta,
+    CheckpointSource,
+    ColdStartManager,
+    ColdStartState,
+    DistillationPool,
+    PromotionResult,
+    RollbackResult,
+    SeedCandidateManager,
 )
 
 # metacognition
 from .metacognition import (
-    MetaSeedManager, MetaSeedData, MetaSeedCategory, MetaSeedStatus,
-    GuardianLoop, GuardianLoopResult, GuardianLoopStatus,
-    CognitiveGoalManager, CognitiveGoalData, GoalType, GoalStatus,
-    CuriosityEngine, ExplorationResult, CuriosityEngineStatus, ExternalQueryResult,
+    CognitiveGoalData,
+    CognitiveGoalManager,
+    CuriosityEngine,
+    CuriosityEngineStatus,
+    ExplorationResult,
+    ExternalQueryResult,
+    GoalStatus,
+    GoalType,
+    GuardianLoop,
+    GuardianLoopResult,
+    GuardianLoopStatus,
+    MetaSeedCategory,
+    MetaSeedData,
+    MetaSeedManager,
+    MetaSeedStatus,
 )
 
 # perception
 from .perception import (
-    PerceptionManager, PerceptionManagerStatus,
-    PerceptActivationEvent, ConceptActivationEvent,
-    PerceptionChannel, PerceptualSeedStatus,
-    VisualAnchor, VisualFeatures,
-    AudioAnchor, AudioFeatures,
-    SomaticAnchor, SomaticFeatures,
-    HebbianBinder, HebbianBinderStatus,
-    MultimodalAligner, AlignmentResult,
+    AlignmentResult,
+    AudioAnchor,
+    AudioFeatures,
+    ConceptActivationEvent,
+    HebbianBinder,
+    HebbianBinderStatus,
+    MultimodalAligner,
+    PerceptActivationEvent,
+    PerceptionChannel,
+    PerceptionManager,
+    PerceptionManagerStatus,
+    PerceptualSeedStatus,
+    SomaticAnchor,
+    SomaticFeatures,
+    VisualAnchor,
+    VisualFeatures,
 )
 
 __all__ = [

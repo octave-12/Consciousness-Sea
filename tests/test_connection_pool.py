@@ -9,18 +9,21 @@
 - close_all() 关闭所有连接
 """
 
+import pathlib
 import sqlite3
 import sys
-import pathlib
 import threading
-from pathlib import Path
 
 _root = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_root))
 sys.path.insert(0, str(_root / "backend" / "src"))
 
-from consciousness_sea.infrastructure.connection_pool import ConnectionPool, ConnectionPoolExhausted, ConnectionPoolClosed
 from consciousness_sea.domain.graph_db import GraphDB
+from consciousness_sea.infrastructure.connection_pool import (
+    ConnectionPool,
+    ConnectionPoolClosed,
+    ConnectionPoolExhausted,
+)
 
 
 def _build_test_db(db_path: str) -> None:

@@ -15,15 +15,15 @@ T-020: ExpertReliabilityStore 单元测试
 from __future__ import annotations
 
 import logging
+import pathlib
 import sqlite3
 import sys
-import pathlib
 
 _root = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_root))
 sys.path.insert(0, str(_root / "backend" / "src"))
 
-from consciousness_sea.expert.expert_reliability import ExpertReliabilityStore, DEFAULT_RELIABILITY
+from consciousness_sea.expert.expert_reliability import DEFAULT_RELIABILITY, ExpertReliabilityStore
 
 
 class TestExpertReliabilityStoreInit:

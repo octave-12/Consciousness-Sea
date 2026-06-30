@@ -11,11 +11,9 @@ Phase 4 元业力边单元测试
 
 from __future__ import annotations
 
-import json
+import pathlib
 import sqlite3
 import sys
-import pathlib
-from unittest.mock import patch
 
 import pytest
 
@@ -23,20 +21,14 @@ _root = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_root))
 sys.path.insert(0, str(_root / "backend" / "src"))
 
-from consciousness_sea.metacognition.meta_seed import (
-    MetaSeedManager,
-    MetaSeedCategory,
-    MetaSeedStatus,
-    DOMAIN_MONITOR_DEFAULT_METRICS,
-)
 from consciousness_sea.domain.graph_db import GraphDB
 from consciousness_sea.infrastructure.config import (
     META_KARMA_DELTA_THRESHOLD,
-    META_KARMA_INITIAL_WEIGHT,
-    KARMA_MIN,
-    KARMA_MAX,
 )
-
+from consciousness_sea.metacognition.meta_seed import (
+    MetaSeedCategory,
+    MetaSeedManager,
+)
 
 # ═══════════════════════════════════════════════════════════
 #  Fixtures

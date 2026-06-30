@@ -15,14 +15,14 @@ from datetime import datetime, timezone
 from typing import Optional  # noqa: F401 — 保持与项目风格一致
 
 from consciousness_sea.infrastructure.config import (
-    VISUAL_FRAME_INTERVAL,
-    VISUAL_MOCK_MODE,
-    VISUAL_RED_THRESHOLD,
-    VISUAL_GREEN_THRESHOLD,
     VISUAL_BLUE_THRESHOLD,
     VISUAL_BRIGHT_THRESHOLD,
     VISUAL_DARK_THRESHOLD,
     VISUAL_EDGE_DENSE_THRESHOLD,
+    VISUAL_FRAME_INTERVAL,
+    VISUAL_GREEN_THRESHOLD,
+    VISUAL_MOCK_MODE,
+    VISUAL_RED_THRESHOLD,
 )
 
 log = logging.getLogger(__name__)
@@ -200,7 +200,7 @@ class VisualAnchor:
             # Sobel 边缘检测
             for y in range(1, height - 1):
                 for x in range(1, width - 1):
-                    idx = y * width + x
+                    y * width + x
                     # Sobel X
                     gx = (
                         -gray[(y - 1) * width + (x - 1)]

@@ -13,16 +13,15 @@ T-018: ContextInjector 单元测试
 
 from __future__ import annotations
 
-import sys
 import pathlib
+import sys
 
 _root = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_root))
 sys.path.insert(0, str(_root / "backend" / "src"))
 
+from consciousness_sea.domain.router import ActivationNode, RippleResult
 from consciousness_sea.expert.context_injector import ContextInjector, PromptResult
-from consciousness_sea.domain.router import RippleResult, ActivationNode
-from consciousness_sea.infrastructure.config import CONTEXT_MAX_TOKENS, CONTEXT_MAX_QUERY_LENGTH
 
 
 def _make_ripple_result(

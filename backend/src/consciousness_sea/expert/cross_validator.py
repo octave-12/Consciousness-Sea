@@ -17,12 +17,12 @@ import re
 from dataclasses import dataclass, field
 from enum import Enum
 
+from consciousness_sea.domain.verifier import BUILTIN_STOP_WORDS, DOMAIN_NAMES
 from consciousness_sea.infrastructure.config import (
-    CROSS_VALIDATION_DISCOUNT,
     CROSS_VALIDATION_CONSISTENCY_THRESHOLD,
+    CROSS_VALIDATION_DISCOUNT,
     MIN_KEYWORD_LENGTH,
 )
-from consciousness_sea.domain.verifier import BUILTIN_STOP_WORDS, DOMAIN_NAMES
 
 log = logging.getLogger(__name__)
 

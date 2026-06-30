@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import sqlite3
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -24,56 +25,64 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field
 
-
 from consciousness_sea import (
     GraphDB,
-    route,
-    answer_from_activation,
-    answer_as_dict,
     answer_with_expert,
-    verify,
     apply_karma,
+    route,
+    verify,
+)
+from consciousness_sea.domain.query_history import get_history, record_query
+from consciousness_sea.infrastructure.audit_logger import record_audit
+from consciousness_sea.infrastructure.auth import (
+    create_access_token,
+    verify_api_key,
 )
 from consciousness_sea.infrastructure.config import (
-    DEFAULT_DB_PATH,
     API_HOST,
     API_PORT,
     API_TIMEOUT,
+    COGNITIVE_GOAL_ENABLED,
+    CORS_ALLOWED_ORIGINS,
+    CURIOSITY_ENGINE_ENABLED,
+    DEFAULT_DB_PATH,
+    DEFAULT_LORA,
+    EXPERT_BACKEND,
+    EXPERT_INFERENCE_TIMEOUT,
+    EXPERT_MAX_VRAM_GB,
+    EXPERT_MODEL_PATH,
+    EXPERT_RELIABILITY,
     HISTORY_DEFAULT_LIMIT,
     HISTORY_MAX_LIMIT,
-    TOP_K_PATHS,
-    VALID_SOURCES,
-    MAX_SOURCE_ID_LENGTH,
-    EXPERT_MODEL_PATH,
     LORA_ADAPTERS,
-    EXPERT_RELIABILITY,
-    DEFAULT_LORA,
-    EXPERT_MAX_VRAM_GB,
-    EXPERT_INFERENCE_TIMEOUT,
+    MAX_SOURCE_ID_LENGTH,
+    META_SEED_ENABLED,
     OLLAMA_BASE_URL,
     OLLAMA_MODEL,
     OLLAMA_TIMEOUT,
-    EXPERT_BACKEND,
-    META_SEED_ENABLED,
-    COGNITIVE_GOAL_ENABLED,
-    CURIOSITY_ENGINE_ENABLED,
     PERCEPTION_ENABLED,
-    CORS_ALLOWED_ORIGINS,
+    TOP_K_PATHS,
+    VALID_SOURCES,
 )
-from consciousness_sea.infrastructure.param_stats import record_param_stats as _record_param_stats_core
-from consciousness_sea.domain.query_history import record_query, get_history
 from consciousness_sea.infrastructure.connection_pool import ConnectionPool, ConnectionPoolExhausted
-from consciousness_sea.infrastructure.user_manager import UserManager
-from consciousness_sea.infrastructure.session_manager import SessionManager, SessionContext
 from consciousness_sea.infrastructure.observer import Observer, StatusData
-from consciousness_sea.infrastructure.auth import verify_api_key
+from consciousness_sea.infrastructure.param_stats import (
+    record_param_stats as _record_param_stats_core,
+)
+from consciousness_sea.infrastructure.rate_limiter import (
+    IP_RATE_LIMIT,
+    IP_RATE_WINDOW,
+    rate_limiter,
+)
+from consciousness_sea.infrastructure.session_manager import SessionManager
+from consciousness_sea.infrastructure.user_manager import UserManager
 
 if TYPE_CHECKING:
     from consciousness_sea.expert.expert_manager import ExpertManager
     from consciousness_sea.learning.checkpoint import CheckpointManager
-    from consciousness_sea.metacognition.guardian_loop import GuardianLoop
     from consciousness_sea.metacognition.cognitive_goal import CognitiveGoalManager
     from consciousness_sea.metacognition.curiosity_engine import CuriosityEngine
+    from consciousness_sea.metacognition.guardian_loop import GuardianLoop
     from consciousness_sea.perception.perception import PerceptionManager
 
 log = logging.getLogger(__name__)
@@ -253,7 +262,58 @@ async def lifespan(app: FastAPI):
         log.info("连接池已关闭")
 
 
-app = FastAPI(title="识海 API", version="0.1.0", lifespan=lifespan)
+
+app = FastAPI(
+    title="识海 API",
+    version="0.1.0",
+    lifespan=lifespan,
+    docs_url="/docs",
+    redoc_url="/redoc",
+    openapi_url="/openapi.json",
+    description="识海 — 去中心化多智能体认知架构 API",
+)
+
+
+
+@app.middleware("http")
+async def rate_limit_and_audit_middleware(request, call_next):
+    import time as _time
+    start = _time.time()
+
+    client_ip = request.client.host if request.client else "unknown"
+    if not rate_limiter.check_ip(client_ip):
+        return JSONResponse(
+            status_code=429,
+            content={"error": "rate_limit_exceeded", "message": "IP rate limit exceeded"},
+            headers={
+                "X-RateLimit-Limit": str(IP_RATE_LIMIT),
+                "X-RateLimit-Window": f"{IP_RATE_WINDOW}s",
+                "Retry-After": str(IP_RATE_WINDOW),
+            },
+        )
+
+    response = await call_next(request)
+    elapsed_ms = (_time.time() - start) * 1000
+
+    ip_remaining = rate_limiter.get_ip_remaining(client_ip)
+    response.headers["X-RateLimit-Limit"] = str(IP_RATE_LIMIT)
+    response.headers["X-RateLimit-Remaining"] = str(ip_remaining)
+
+    try:
+        record_audit(
+            action="api_request",
+            method=request.method,
+            path=str(request.url.path),
+            status_code=response.status_code,
+            ip_address=client_ip,
+            user_agent=request.headers.get("user-agent"),
+            response_time_ms=round(elapsed_ms, 2),
+        )
+    except Exception:
+        pass
+
+    return response
+
 
 _cors_origins = CORS_ALLOWED_ORIGINS
 _has_regex = any("*" in o for o in _cors_origins)
@@ -290,9 +350,10 @@ def _create_expert_manager() -> Optional[ExpertManager]:
         ExpertManager 实例或 None
     """
     try:
+        from pathlib import Path
+
         from consciousness_sea.expert.expert_manager import ExpertManager
         from consciousness_sea.expert.expert_reliability import ExpertReliabilityStore
-        from pathlib import Path
 
         # 解析 LoRA 适配器路径映射
         lora_adapters: dict[str, Path] = {}
@@ -536,10 +597,97 @@ def _resolve_user_label(req: QueryRequest, user_mgr: UserManager) -> Optional[st
 # ═══════════════════════════════════════════════════════════
 
 
+class LoginRequest(BaseModel):
+    username: str = Field(..., min_length=1, max_length=100)
+    password: str = Field(..., min_length=1, max_length=200)
+
+
+class LoginResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    expires_in: int
+
+
+class AuditLogQuery(BaseModel):
+    user_id: Optional[str] = None
+    action: Optional[str] = None
+    start_time: Optional[str] = None
+    end_time: Optional[str] = None
+    limit: int = Field(100, ge=1, le=1000)
+    offset: int = Field(0, ge=0)
+
+
+@app.post("/api/v1/auth/login", response_model=LoginResponse)
+def login_endpoint(req: LoginRequest):
+    from consciousness_sea.infrastructure.auth import _JWT_EXPIRATION_HOURS, _auth
+    if not _auth.enabled:
+        token = create_access_token(req.username)
+        return LoginResponse(access_token=token, expires_in=_JWT_EXPIRATION_HOURS * 3600)
+    if not _auth.validate(req.password):
+        raise HTTPException(status_code=401, detail={"error": "unauthorized", "message": "Invalid credentials"})
+    token = create_access_token(req.username)
+    return LoginResponse(access_token=token, expires_in=_JWT_EXPIRATION_HOURS * 3600)
+
+
 @app.get("/health")
 def health_check():
-    """健康检查"""
-    return {"status": "ok"}
+    db_ok = False
+    try:
+        if _pool is not None:
+            graph = _pool.acquire()
+            try:
+                graph.stats()
+                db_ok = True
+            finally:
+                _pool.release(graph)
+    except Exception:
+        pass
+
+    return {
+        "status": "ok" if db_ok else "degraded",
+        "version": "0.1.0",
+        "database": "connected" if db_ok else "unavailable",
+        "modules": {
+            "expert": _expert_manager is not None,
+            "checkpoint": _checkpoint_manager is not None,
+            "guardian": _guardian_loop is not None,
+            "cognitive_goal": _goal_mgr is not None,
+            "curiosity": _curiosity_engine is not None,
+            "perception": _perception_manager is not None,
+        },
+    }
+
+
+@app.get("/metrics")
+def metrics_endpoint():
+    from consciousness_sea.infrastructure.rate_limiter import circuit_breaker, rate_limiter
+    return {
+        "rate_limiter": {
+            "ip_entries": len(rate_limiter._ip_entries),
+            "user_entries": len(rate_limiter._user_entries),
+        },
+        "circuit_breaker": {
+            "circuits": {
+                k: v for k, v in circuit_breaker._circuits.items()
+            }
+        },
+    }
+
+
+@app.post("/api/v1/audit/query")
+def query_audit_logs(body: AuditLogQuery, _auth: None = Depends(verify_api_key)):
+    from consciousness_sea.infrastructure.audit_logger import query_audit_log as _query_audit_log
+    return {
+        "records": _query_audit_log(
+            user_id=body.user_id,
+            action=body.action,
+            start_time=body.start_time,
+            end_time=body.end_time,
+            limit=body.limit,
+            offset=body.offset,
+        )
+    }
+
 
 
 @app.post("/api/v1/query", response_model=QueryResponse)
@@ -995,8 +1143,8 @@ def get_cold_start_status(user_label: str, pool: ConnectionPool = Depends(get_po
     graph = None
     try:
         graph = pool.acquire()
-        from consciousness_sea.learning.cold_start import ColdStartManager
         from consciousness_sea.infrastructure.config import COLD_START_QUERIES
+        from consciousness_sea.learning.cold_start import ColdStartManager
         manager = ColdStartManager(graph)
         state = manager.get_state(user_label)
         return {
@@ -1042,7 +1190,7 @@ def list_meta_seeds(
     graph = None
     try:
         graph = pool.acquire()
-        from consciousness_sea.metacognition.meta_seed import MetaSeedManager, MetaSeedCategory
+        from consciousness_sea.metacognition.meta_seed import MetaSeedCategory, MetaSeedManager
         mgr = MetaSeedManager(graph)
 
         cat_enum = None
@@ -1387,7 +1535,8 @@ def list_cognitive_goals(
     graph = None
     try:
         graph = pool.acquire()
-        from consciousness_sea.metacognition.cognitive_goal import CognitiveGoalManager, GoalStatus, GoalType as GT
+        from consciousness_sea.metacognition.cognitive_goal import CognitiveGoalManager, GoalStatus
+        from consciousness_sea.metacognition.cognitive_goal import GoalType as GT
 
         mgr = CognitiveGoalManager(graph)
 
@@ -1622,11 +1771,11 @@ def trigger_curiosity_explore(goal_id: str, pool: ConnectionPool = Depends(get_p
 
     graph_to_release = None
     try:
+        from consciousness_sea.metacognition.cognitive_goal import CognitiveGoalManager
         if _guardian_graph is not None:
             goal_mgr = CognitiveGoalManager(_guardian_graph)
         else:
             graph_to_release = pool.acquire()
-            from consciousness_sea.metacognition.cognitive_goal import CognitiveGoalManager
             goal_mgr = CognitiveGoalManager(graph_to_release)
 
         goal = goal_mgr.get_goal(goal_id)
@@ -1821,13 +1970,22 @@ def perception_align(_auth: None = Depends(verify_api_key)):
 
 
 def main():
-    """启动 uvicorn 服务"""
+    ssl_keyfile = os.environ.get("SSL_KEYFILE")
+    ssl_certfile = os.environ.get("SSL_CERTFILE")
+
+    ssl_kwargs: dict = {}
+    if ssl_certfile and ssl_keyfile:
+        ssl_kwargs["ssl_keyfile"] = ssl_keyfile
+        ssl_kwargs["ssl_certfile"] = ssl_certfile
+        log.info("HTTPS 已启用: cert=%s", ssl_certfile)
+
     uvicorn.run(
         "consciousness_sea.interfaces.api:app",
         host=API_HOST,
         port=API_PORT,
         workers=1,
         timeout_keep_alive=API_TIMEOUT,
+        **ssl_kwargs,
     )
 
 

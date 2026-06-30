@@ -16,11 +16,11 @@ Phase 5 CuriosityEngine 单元测试
 from __future__ import annotations
 
 import json
+import pathlib
 import sqlite3
 import sys
-import pathlib
 from datetime import datetime, timezone
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -28,27 +28,21 @@ _root = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_root))
 sys.path.insert(0, str(_root / "backend" / "src"))
 
-from consciousness_sea.metacognition.curiosity_engine import (
-    CuriosityEngine,
-    ExplorationResult,
-    CuriosityEngineStatus,
-    ExternalQueryResult,
-)
-from consciousness_sea.metacognition.cognitive_goal import (
-    CognitiveGoalManager,
-    CognitiveGoalData,
-    GoalType,
-    GoalStatus,
-)
 from consciousness_sea.domain.graph_db import GraphDB
 from consciousness_sea.infrastructure.config import (
-    CURIOSITY_ENGINE_ENABLED,
     CURIOSITY_MAX_CONCURRENT,
-    CURIOSITY_ACTIVATION_THRESHOLD,
-    EXTERNAL_QUERY_ENABLED,
-    GOAL_HIGH_CONFLICT_THRESHOLD,
 )
-
+from consciousness_sea.metacognition.cognitive_goal import (
+    CognitiveGoalData,
+    CognitiveGoalManager,
+    GoalType,
+)
+from consciousness_sea.metacognition.curiosity_engine import (
+    CuriosityEngine,
+    CuriosityEngineStatus,
+    ExplorationResult,
+    ExternalQueryResult,
+)
 
 # ═══════════════════════════════════════════════════════════
 #  Fixtures
@@ -439,7 +433,7 @@ class TestInternalExploration:
         )
 
         # Mock route 函数（局部导入，需 patch 源模块）
-        from consciousness_sea.domain.router import RippleResult, ActivationNode
+        from consciousness_sea.domain.router import ActivationNode, RippleResult
         mock_result = RippleResult()
         mock_result.activated["感冒"] = ActivationNode(
             label="感冒", activation=0.8, domain="医学", depth=0,

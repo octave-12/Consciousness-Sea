@@ -8,21 +8,19 @@
 包含 IS_A、RELATED、COOCCURS_WITH 等多种边类型。
 """
 
+import pathlib
 import sqlite3
 import sys
-import pathlib
 import threading
-
 
 _root = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_root))
 sys.path.insert(0, str(_root / "backend" / "src"))
 
+from consciousness_sea.domain.answerer import answer_as_dict, answer_from_activation
 from consciousness_sea.domain.graph_db import GraphDB
-from consciousness_sea.domain.router import route, RippleResult
-from consciousness_sea.domain.answerer import answer_from_activation, answer_as_dict
-from consciousness_sea.domain.verifier import verify, apply_karma
-
+from consciousness_sea.domain.router import RippleResult, route
+from consciousness_sea.domain.verifier import apply_karma, verify
 
 # ═══════════════════════════════════════════════════════════
 #  内存数据库构建
@@ -381,8 +379,7 @@ class TestEndToEnd:
         try:
             db.match_seeds('测试')
             # 如果没有异常，说明 conn 为 None 被内部处理了
-        except (AttributeError, TypeError):
-            # 预期行为：conn 为 None 时访问会抛异常
+        except (AttributeError, TypeError, RuntimeError):
             pass
         finally:
             db.close()
@@ -459,8 +456,8 @@ class TestConcurrentIntegration:
         route() 每次调用创建新的 RippleResult 实例，
         因此两个查询的结果天然隔离。
         """
-        from consciousness_sea.infrastructure.connection_pool import ConnectionPool
         from consciousness_sea.domain.router import route
+        from consciousness_sea.infrastructure.connection_pool import ConnectionPool
 
         db_path = str(tmp_path / "concurrent_test.db")
         _build_concurrent_test_db(db_path)
@@ -526,8 +523,8 @@ class TestConcurrentIntegration:
         使用 adjust_karma_atomic() 原子操作，多个线程并发修改同一条边，
         最终权重应反映所有修改（不丢失更新）。
         """
-        from consciousness_sea.infrastructure.connection_pool import ConnectionPool
         from consciousness_sea.infrastructure.config import KARMA_DELTA
+        from consciousness_sea.infrastructure.connection_pool import ConnectionPool
 
         db_path = str(tmp_path / "concurrent_karma.db")
         _build_concurrent_test_db(db_path)
@@ -589,10 +586,9 @@ class TestConcurrentIntegration:
         创建一个用户种子，为其添加到"量子力学"的业力边，
         然后查询模糊词，验证涟漪偏向用户关注的物理领域。
         """
+        from consciousness_sea.domain.router import route
         from consciousness_sea.infrastructure.connection_pool import ConnectionPool
         from consciousness_sea.infrastructure.user_manager import UserManager
-        from consciousness_sea.domain.router import route
-        from consciousness_sea.infrastructure.config import USER_PREACTIVATION
 
         db_path = str(tmp_path / "user_bias.db")
         _build_concurrent_test_db(db_path)

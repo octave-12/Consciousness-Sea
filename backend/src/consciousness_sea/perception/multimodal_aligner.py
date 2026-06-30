@@ -11,14 +11,10 @@ import logging
 import threading
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Optional
 
 from consciousness_sea.domain.graph_db import GraphDB
 from consciousness_sea.infrastructure.config import (
     MULTIMODAL_ALIGNMENT_ENABLED,
-    MULTIMODAL_ALIGNMENT_INTERVAL,
-    MULTIMODAL_ALIGNMENT_SAMPLE_COUNT,
-    MULTIMODAL_ALIGNMENT_PER_IMAGE_TIMEOUT,
 )
 
 log = logging.getLogger(__name__)
@@ -199,7 +195,7 @@ class MultimodalAligner:
         """
         try:
             from consciousness_sea.learning.distillation_pool import DistillationPool
-            distill = DistillationPool(self._graph)
+            DistillationPool(self._graph)
             now = datetime.now(timezone.utc).isoformat()
 
             # 使用 submit_candidate 写入提炼池

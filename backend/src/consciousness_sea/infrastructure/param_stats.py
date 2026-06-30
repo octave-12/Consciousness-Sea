@@ -83,7 +83,7 @@ def record_param_stats(
         result: 涟漪传播结果
         verdict: 校验结果字典，包含 confidence 和 karma_direction
     """
-    from .config import RIPPLE_DECAY, DOMAIN_THRESHOLD, CONFIDENCE_HIGH
+    from .config import CONFIDENCE_HIGH, DOMAIN_THRESHOLD, RIPPLE_DECAY
 
     # 确保表存在
     ensure_param_stats_table(graph)

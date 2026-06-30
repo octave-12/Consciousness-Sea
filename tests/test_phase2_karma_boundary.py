@@ -10,10 +10,10 @@ Phase 2 业力边界裁剪测试 (T3.3)
 - 孤立节点统计
 """
 
+import logging
+import pathlib
 import sqlite3
 import sys
-import pathlib
-import logging
 from pathlib import Path
 
 _root = pathlib.Path(__file__).resolve().parent.parent
@@ -21,8 +21,8 @@ sys.path.insert(0, str(_root))
 sys.path.insert(0, str(_root / "backend" / "src"))
 
 from consciousness_sea.domain.graph_db import GraphDB
-from consciousness_sea.infrastructure.karma_cleaner import KarmaCleaner
 from consciousness_sea.infrastructure.connection_pool import ConnectionPool
+from consciousness_sea.infrastructure.karma_cleaner import KarmaCleaner
 
 
 def _build_test_db(db_path: str) -> None:
@@ -336,7 +336,7 @@ class TestImportEdgeProtection:
         pool = ConnectionPool(db_path, pool_size=2)
         cleaner = KarmaCleaner(pool)
 
-        result = cleaner.cleanup_low_weight_edges()
+        cleaner.cleanup_low_weight_edges()
 
         # 导入边权重 0.5 >= KARMA_MIN，不应被删除
         graph = pool.acquire()
@@ -364,7 +364,7 @@ class TestImportEdgeProtection:
         pool = ConnectionPool(db_path, pool_size=2)
         cleaner = KarmaCleaner(pool)
 
-        result = cleaner.cleanup_low_weight_edges()
+        cleaner.cleanup_low_weight_edges()
 
         # 导入边权重 0.005 < KARMA_MIN=0.01，应被删除
         graph = pool.acquire()

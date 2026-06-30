@@ -2,15 +2,16 @@
 测试路由器 — BFS 涟漪传播
 """
 
+import pathlib
 import sqlite3
 import sys
-import pathlib
+
 _root = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_root))
 sys.path.insert(0, str(_root / "backend" / "src"))
 
 from consciousness_sea.domain.graph_db import GraphDB
-from consciousness_sea.domain.router import route, RippleResult
+from consciousness_sea.domain.router import RippleResult, route
 
 
 def _setup_db():

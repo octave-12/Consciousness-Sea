@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import json
 import logging
-import sqlite3
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, TypedDict
@@ -17,19 +16,19 @@ from typing import TYPE_CHECKING, TypedDict
 from .connection_pool import ConnectionPool
 
 if TYPE_CHECKING:
-    from consciousness_sea.domain.graph_db import GraphDB
+    pass
 
 from .config import (
-    DEFAULT_DB_PATH,
-    KARMA_ALERT_THRESHOLD,
-    STATUS_TOP_N,
-    META_SEED_ENABLED,
-    META_ALERT_CONFLICT_THRESHOLD,
     COGNITIVE_GOAL_ENABLED,
-    GOAL_POOL_MAX_SIZE,
     CURIOSITY_ENGINE_ENABLED,
-    PERCEPTION_ENABLED,
+    DEFAULT_DB_PATH,
+    GOAL_POOL_MAX_SIZE,
+    KARMA_ALERT_THRESHOLD,
+    META_ALERT_CONFLICT_THRESHOLD,
+    META_SEED_ENABLED,
     PERCEPTION_CHANNEL_FAILURE_ALERT_THRESHOLD,
+    PERCEPTION_ENABLED,
+    STATUS_TOP_N,
 )
 
 log = logging.getLogger(__name__)
@@ -484,7 +483,10 @@ class Observer:
             guardian_loop_status = None
             if META_SEED_ENABLED:
                 try:
-                    from consciousness_sea.metacognition.meta_seed import MetaSeedManager, MetaSeedCategory
+                    from consciousness_sea.metacognition.meta_seed import (
+                        MetaSeedCategory,
+                        MetaSeedManager,
+                    )
                     mgr = MetaSeedManager(graph)
                     all_seeds = mgr.list_meta_seeds()
                     by_category: dict[str, int] = {}
@@ -526,8 +528,8 @@ class Observer:
             curiosity_engine_status = None
             if CURIOSITY_ENGINE_ENABLED:
                 try:
-                    from consciousness_sea.metacognition.curiosity_engine import CuriosityEngine
                     from consciousness_sea.metacognition.cognitive_goal import CognitiveGoalManager
+                    from consciousness_sea.metacognition.curiosity_engine import CuriosityEngine
                     goal_mgr = CognitiveGoalManager(graph)
                     engine = CuriosityEngine(graph, goal_mgr)
                     status = engine.get_status()

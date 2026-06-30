@@ -16,11 +16,11 @@ from datetime import datetime, timezone
 from typing import Optional  # noqa: F401 — 保持与项目风格一致
 
 from consciousness_sea.infrastructure.config import (
-    AUDITORY_SAMPLE_RATE,
-    AUDITORY_MOCK_MODE,
+    AUDITORY_BRIGHT_THRESHOLD,
     AUDITORY_HIGH_FREQ_THRESHOLD,
     AUDITORY_LOW_FREQ_THRESHOLD,
-    AUDITORY_BRIGHT_THRESHOLD,
+    AUDITORY_MOCK_MODE,
+    AUDITORY_SAMPLE_RATE,
 )
 
 log = logging.getLogger(__name__)

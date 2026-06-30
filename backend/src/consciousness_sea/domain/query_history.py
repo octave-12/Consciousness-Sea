@@ -11,11 +11,9 @@ import json
 import logging
 import sqlite3
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any
 
 from consciousness_sea.infrastructure.config import (
-    DEFAULT_DB_PATH,
     HISTORY_DEFAULT_LIMIT,
     HISTORY_MAX_LIMIT,
 )

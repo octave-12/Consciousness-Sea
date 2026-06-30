@@ -12,17 +12,21 @@
 """
 
 import hashlib
+import pathlib
 import sqlite3
 import sys
-import pathlib
 
 _root = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_root))
 sys.path.insert(0, str(_root / "backend" / "src"))
 
+from consciousness_sea.infrastructure.config import (
+    MAX_SOURCE_ID_LENGTH,
+    USER_ID_HASH_LENGTH,
+    VALID_SOURCES,
+)
 from consciousness_sea.infrastructure.connection_pool import ConnectionPool
 from consciousness_sea.infrastructure.user_manager import UserManager
-from consciousness_sea.infrastructure.config import VALID_SOURCES, USER_ID_HASH_LENGTH, MAX_SOURCE_ID_LENGTH
 
 
 def _build_test_db(db_path: str) -> None:
@@ -100,7 +104,7 @@ class TestUserMappingLookup:
             assert user_id is not None
 
             # 验证确定性: 手动计算期望的 user_id
-            raw = f"wechat:abc".encode()
+            raw = "wechat:abc".encode()
             expected_suffix = hashlib.sha256(raw).hexdigest()[:USER_ID_HASH_LENGTH]
             expected_id = f"user_{expected_suffix}"
             assert user_id == expected_id

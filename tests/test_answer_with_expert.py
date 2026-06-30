@@ -12,18 +12,17 @@ T-023: answer_with_expert 集成测试
 
 from __future__ import annotations
 
+import pathlib
 import sqlite3
 import sys
-import pathlib
 
 _root = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_root))
 sys.path.insert(0, str(_root / "backend" / "src"))
 
-from consciousness_sea.domain.answerer import answer_with_expert, answer_from_activation
-from consciousness_sea.domain.router import RippleResult, ActivationNode
+from consciousness_sea.domain.answerer import answer_from_activation, answer_with_expert
 from consciousness_sea.domain.graph_db import GraphDB
-from consciousness_sea.expert.cross_validator import CrossValidationStatus
+from consciousness_sea.domain.router import ActivationNode, RippleResult
 
 # 导入 conftest 中的 MockExpertManager
 from tests.conftest import MockExpertManager
@@ -114,7 +113,7 @@ class TestAnswerWithExpertAvailable:
     def setup_method(self):
         self.conn = _setup_db()
         self.db = GraphDB(':memory:')
-        self.db.conn = conn = self.conn
+        self.db.conn = self.conn
         self.db.ensure_phase2_tables()
         self.db.ensure_phase3_tables()
         self.mock_manager = MockExpertManager(available=True, answer="感冒是常见的呼吸道疾病，建议多休息")

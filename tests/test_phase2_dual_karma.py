@@ -9,9 +9,9 @@ Phase 2 双层业力架构测试 (T6.2)
 - 用户删除后个人业力清理
 """
 
+import pathlib
 import sqlite3
 import sys
-import pathlib
 from pathlib import Path
 
 _root = pathlib.Path(__file__).resolve().parent.parent
@@ -19,8 +19,8 @@ sys.path.insert(0, str(_root))
 sys.path.insert(0, str(_root / "backend" / "src"))
 
 from consciousness_sea.domain.graph_db import GraphDB
+from consciousness_sea.domain.router import ActivationNode, RippleResult, route
 from consciousness_sea.domain.verifier import apply_karma
-from consciousness_sea.domain.router import route, RippleResult, ActivationNode
 from consciousness_sea.infrastructure.config import COLD_START_QUERIES
 
 

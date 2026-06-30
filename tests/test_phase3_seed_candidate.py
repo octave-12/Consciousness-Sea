@@ -12,9 +12,9 @@ Phase 3 候选种子管理器测试
 from __future__ import annotations
 
 import json
+import pathlib
 import sqlite3
 import sys
-import pathlib
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
@@ -24,21 +24,16 @@ _root = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_root))
 sys.path.insert(0, str(_root / "backend" / "src"))
 
-from consciousness_sea.learning.seed_candidate import (
-    CandidateSeed,
-    CandidateStatus,
-    PromotionResult,
-    SeedCandidateManager,
-)
 from consciousness_sea.domain.graph_db import GraphDB
 from consciousness_sea.infrastructure.config import (
-    CANDIDATE_SEED_AUTO_CREATE,
     CANDIDATE_SEED_EXPIRE_DAYS,
     CANDIDATE_SEED_MIN_COUNT,
     CANDIDATE_SEED_PROMOTE_COUNT,
     CANDIDATE_SEED_PURGE_DAYS,
 )
-
+from consciousness_sea.learning.seed_candidate import (
+    SeedCandidateManager,
+)
 
 # ═══════════════════════════════════════════════════════════
 #  Fixtures

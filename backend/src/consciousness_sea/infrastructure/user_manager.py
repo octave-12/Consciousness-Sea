@@ -22,9 +22,9 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from .config import (
-    USER_ID_HASH_LENGTH,
-    KARMA_MIN,
     KARMA_MAX,
+    KARMA_MIN,
+    USER_ID_HASH_LENGTH,
 )
 from .connection_pool import ConnectionPool
 

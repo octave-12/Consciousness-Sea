@@ -16,9 +16,9 @@ from __future__ import annotations
 import json
 import sqlite3
 import sys
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from datetime import datetime, timezone, timedelta
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -31,37 +31,24 @@ _root = str(Path(__file__).resolve().parent.parent)
 if _root not in sys.path:
     sys.path.insert(0, _root)
 
+from consciousness_sea.domain.graph_db import GraphDB
+from consciousness_sea.domain.router import route
+from consciousness_sea.infrastructure.config import (
+    GOAL_DECAY_CYCLES,
+    GOAL_HIGH_CONFLICT_THRESHOLD,
+    GOAL_LOW_CONF_THRESHOLD,
+    GOAL_USER_ABSENCE_CYCLES,
+    GUARDIAN_LOOP_INTERVAL,
+)
 from consciousness_sea.metacognition.cognitive_goal import (
     CognitiveGoalManager,
-    CognitiveGoalData,
-    GoalType,
     GoalStatus,
 )
 from consciousness_sea.metacognition.curiosity_engine import (
     CuriosityEngine,
     ExplorationResult,
-    CuriosityEngineStatus,
 )
-from consciousness_sea.metacognition.guardian_loop import GuardianLoop, GuardianLoopResult
-from consciousness_sea.domain.graph_db import GraphDB
-from consciousness_sea.domain.router import route
-from consciousness_sea.infrastructure.config import (
-    COGNITIVE_GOAL_ENABLED,
-    CURIOSITY_ENGINE_ENABLED,
-    GOAL_LOW_CONF_THRESHOLD,
-    GOAL_HIGH_CONFLICT_THRESHOLD,
-    GOAL_LOW_DENSITY_RATIO,
-    GOAL_NEW_TERM_THRESHOLD,
-    GOAL_DECAY_CYCLES,
-    GOAL_DECAY_FACTOR,
-    GOAL_EXPIRE_THRESHOLD,
-    GOAL_USER_ABSENCE_CYCLES,
-    GOAL_POOL_MAX_SIZE,
-    GOAL_AUTO_EXPLORE_THRESHOLD,
-    GUARDIAN_LOOP_INTERVAL,
-    META_SEED_ENABLED,
-)
-
+from consciousness_sea.metacognition.guardian_loop import GuardianLoop
 
 # ═══════════════════════════════════════════════════════════
 #  Fixtures
@@ -499,7 +486,7 @@ class TestScenario4PoolManagement:
         # 设置池上限为 3，触发淘汰
         with patch("consciousness_sea.metacognition.cognitive_goal.GOAL_POOL_MAX_SIZE", 3):
             mgr = CognitiveGoalManager(graph)
-            cooled = mgr.cool_goals()
+            mgr.cool_goals()
 
         # 验证最低权重的2个目标被淘汰
         active_count = graph.conn.execute(
@@ -598,7 +585,6 @@ class TestScenario6APIQuery:
     def test_list_cognitive_goals_api(self, graph):
         """GET /api/v1/cognitive-goals 返回正确格式"""
         from fastapi.testclient import TestClient
-        import consciousness_sea.interfaces.api as api
         api_module = sys.modules['consciousness_sea.interfaces.api']
 
         mock_pool = MagicMock()
@@ -636,6 +622,7 @@ class TestScenario6APIQuery:
 
         with patch("consciousness_sea.interfaces.api.COGNITIVE_GOAL_ENABLED", True), \
              patch("consciousness_sea.interfaces.api.META_SEED_ENABLED", True):
+            api_module.app.dependency_overrides.clear()
             client = TestClient(api_module.app)
             response = client.get("/api/v1/cognitive-goals")
 
@@ -652,7 +639,6 @@ class TestScenario6APIQuery:
     def test_curiosity_status_api(self, graph):
         """GET /api/v1/curiosity/status 返回引擎状态"""
         from fastapi.testclient import TestClient
-        import consciousness_sea.interfaces.api as api
         api_module = sys.modules['consciousness_sea.interfaces.api']
 
         mock_pool = MagicMock()
@@ -666,6 +652,7 @@ class TestScenario6APIQuery:
         api_module._curiosity_engine = curiosity_engine
 
         with patch("consciousness_sea.interfaces.api.CURIOSITY_ENGINE_ENABLED", True):
+            api_module.app.dependency_overrides.clear()
             client = TestClient(api_module.app)
             response = client.get("/api/v1/curiosity/status")
 
@@ -680,7 +667,6 @@ class TestScenario6APIQuery:
     def test_guardian_trigger_api(self, graph):
         """POST /api/v1/guardian/trigger 触发守护循环（含目标生成）"""
         from fastapi.testclient import TestClient
-        import consciousness_sea.interfaces.api as api
         api_module = sys.modules['consciousness_sea.interfaces.api']
 
         mock_pool = MagicMock()
@@ -704,6 +690,7 @@ class TestScenario6APIQuery:
 
         with patch("consciousness_sea.interfaces.api.META_SEED_ENABLED", True), \
              patch("consciousness_sea.interfaces.api.COGNITIVE_GOAL_ENABLED", True):
+            api_module.app.dependency_overrides.clear()
             client = TestClient(api_module.app)
             response = client.post("/api/v1/guardian/trigger")
 

@@ -15,9 +15,9 @@ Phase 4 GuardianLoop 单元测试
 from __future__ import annotations
 
 import json
+import pathlib
 import sqlite3
 import sys
-import pathlib
 import time
 from unittest.mock import patch
 
@@ -27,16 +27,19 @@ _root = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_root))
 sys.path.insert(0, str(_root / "backend" / "src"))
 
-from consciousness_sea.metacognition.guardian_loop import GuardianLoop, GuardianLoopResult, GuardianLoopStatus
-from consciousness_sea.metacognition.meta_seed import MetaSeedManager, MetaSeedCategory, MetaSeedStatus
 from consciousness_sea.domain.graph_db import GraphDB
 from consciousness_sea.infrastructure.config import (
-    META_SEED_ENABLED,
     GUARDIAN_LOOP_INTERVAL,
-    GUARDIAN_LOOP_TIMEOUT,
-    META_SEED_DORMANT_CYCLES,
 )
-
+from consciousness_sea.metacognition.guardian_loop import (
+    GuardianLoop,
+    GuardianLoopResult,
+    GuardianLoopStatus,
+)
+from consciousness_sea.metacognition.meta_seed import (
+    MetaSeedCategory,
+    MetaSeedManager,
+)
 
 # ═══════════════════════════════════════════════════════════
 #  Fixtures
@@ -250,7 +253,6 @@ class TestGuardianExecuteOnce:
 
     def test_execute_once_logs_result(self, guardian, graph):
         """单次执行记录 INFO 日志"""
-        import logging
         with patch("consciousness_sea.metacognition.guardian_loop.log") as mock_log:
             result = guardian.execute_once()
             if result.success:
@@ -418,10 +420,10 @@ class TestGuardianIntegration:
 
     def test_execute_once_idempotent(self, guardian, graph):
         """多次执行幂等：不重复创建元种子"""
-        result1 = guardian.execute_once()
+        guardian.execute_once()
         count1 = graph.conn.execute("SELECT COUNT(*) FROM meta_seeds").fetchone()[0]
 
-        result2 = guardian.execute_once()
+        guardian.execute_once()
         count2 = graph.conn.execute("SELECT COUNT(*) FROM meta_seeds").fetchone()[0]
 
         # 第二次不应创建新的元种子

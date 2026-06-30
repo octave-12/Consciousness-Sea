@@ -11,24 +11,23 @@
 - 空查询和无匹配查询
 """
 
-import sys
 import pathlib
+import sys
 
 _root = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_root))
 sys.path.insert(0, str(_root / "backend" / "src"))
 
 from consciousness_sea.domain.tokenizer import (
-    tokenize,
-    TokenMatch,
-    match_with_aliases,
-    fuzzy_match,
-    _max_forward_match,
-    _levenshtein,
-    detect_negation,
     NEGATION_WORDS,
+    TokenMatch,
+    _levenshtein,
+    _max_forward_match,
+    detect_negation,
+    fuzzy_match,
+    match_with_aliases,
+    tokenize,
 )
-
 
 # ═══════════════════════════════════════════════════════════════
 #  测试用知识库索引

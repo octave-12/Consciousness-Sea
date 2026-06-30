@@ -11,24 +11,24 @@ Phase 4 API 端点测试
 
 from __future__ import annotations
 
-import json
 import pathlib
 import sqlite3
 import sys
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent / 'backend' / 'src'))
 
-from fastapi.testclient import TestClient
-
 from consciousness_sea.domain.graph_db import GraphDB
-from consciousness_sea.metacognition.meta_seed import MetaSeedManager, MetaSeedCategory, MetaSeedStatus
-from consciousness_sea.metacognition.guardian_loop import GuardianLoop, GuardianLoopResult, GuardianLoopStatus
-from consciousness_sea.infrastructure.config import META_SEED_ENABLED
-
+from consciousness_sea.metacognition.guardian_loop import (
+    GuardianLoop,
+)
+from consciousness_sea.metacognition.meta_seed import (
+    MetaSeedManager,
+)
+from fastapi.testclient import TestClient
 
 # ═══════════════════════════════════════════════════════════
 #  Fixtures
@@ -142,8 +142,10 @@ def graph():
 @pytest.fixture
 def client(graph):
     """创建 TestClient，注入 mock 的连接池和 GuardianLoop"""
-    import consciousness_sea.interfaces.api as api  # 触发 api.app 模块导入
     api_module = sys.modules['consciousness_sea.interfaces.api']
+
+    saved_overrides = dict(api_module.app.dependency_overrides)
+    api_module.app.dependency_overrides.clear()
 
     # 创建 mock 连接池
     mock_pool = MagicMock()
@@ -198,6 +200,7 @@ def client(graph):
     api_module._pool = None
     api_module._guardian_loop = None
     api_module._observer = None
+    api_module.app.dependency_overrides.update(saved_overrides)
 
 
 # ═══════════════════════════════════════════════════════════

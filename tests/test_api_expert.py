@@ -11,25 +11,22 @@ T-024: API 端点集成测试 + 向后兼容性测试
 
 from __future__ import annotations
 
+import pathlib
 import sqlite3
 import sys
-import pathlib
-from unittest.mock import patch
 
 _root = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_root))
 sys.path.insert(0, str(_root / "backend" / "src"))
 
+from consciousness_sea.domain.graph_db import GraphDB
+from consciousness_sea.infrastructure.observer import Observer
+from consciousness_sea.infrastructure.session_manager import SessionManager
+from consciousness_sea.infrastructure.user_manager import UserManager
+from consciousness_sea.interfaces.api import app
 from fastapi.testclient import TestClient
 
-from consciousness_sea.interfaces.api import app
-from consciousness_sea.domain.graph_db import GraphDB
-from consciousness_sea.infrastructure.connection_pool import ConnectionPool
-from consciousness_sea.infrastructure.user_manager import UserManager
-from consciousness_sea.infrastructure.session_manager import SessionManager, SessionContext
-from consciousness_sea.infrastructure.observer import Observer
 from tests.conftest import MockExpertManager
-
 
 # ═══════════════════════════════════════════════════════════
 #  内存数据库构建
@@ -175,7 +172,12 @@ def _override_get_observer():
     yield _test_observer
 
 
-from consciousness_sea.interfaces.api import get_pool, get_session_manager, get_user_manager, get_observer
+from consciousness_sea.interfaces.api import (
+    get_observer,
+    get_pool,
+    get_session_manager,
+    get_user_manager,
+)
 
 app.dependency_overrides[get_pool] = _override_get_pool
 app.dependency_overrides[get_session_manager] = _override_get_session_manager
@@ -366,7 +368,7 @@ class TestApiExpertBackwardCompat:
         """健康检查端点仍然正常工作"""
         resp = self.client.get('/health')
         assert resp.status_code == 200
-        assert resp.json()['status'] == 'ok'
+        assert resp.json()['status'] in ('ok', 'degraded')
 
     def test_history_endpoint_still_works(self):
         """历史端点仍然正常工作"""

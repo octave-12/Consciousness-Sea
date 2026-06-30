@@ -13,11 +13,10 @@ Phase 4 端到端场景验收测试
 
 from __future__ import annotations
 
-import json
 import sqlite3
 import sys
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -30,26 +29,19 @@ _root = str(Path(__file__).resolve().parent.parent)
 if _root not in sys.path:
     sys.path.insert(0, _root)
 
-from consciousness_sea.metacognition.meta_seed import (
-    MetaSeedManager,
-    MetaSeedCategory,
-    MetaSeedStatus,
-    DOMAIN_MONITOR_DEFAULT_METRICS,
-    RELATION_QUALITY_DEFAULT_METRICS,
-    SYSTEM_MONITOR_DEFAULT_METRICS,
-    SELF_BOUNDARY_DEFAULT_METRICS,
-    SYSTEM_META_SEEDS,
-)
-from consciousness_sea.metacognition.guardian_loop import GuardianLoop, GuardianLoopResult
 from consciousness_sea.domain.graph_db import GraphDB
 from consciousness_sea.domain.router import route
 from consciousness_sea.infrastructure.config import (
-    META_SEED_ENABLED,
     META_KARMA_DELTA_THRESHOLD,
     META_SEED_DORMANT_CYCLES,
-    CONFIDENCE_LOW,
 )
-
+from consciousness_sea.metacognition.guardian_loop import GuardianLoop
+from consciousness_sea.metacognition.meta_seed import (
+    SELF_BOUNDARY_DEFAULT_METRICS,
+    MetaSeedCategory,
+    MetaSeedManager,
+    MetaSeedStatus,
+)
 
 # ═══════════════════════════════════════════════════════════
 #  Fixtures
@@ -488,7 +480,6 @@ class TestScenario6APIQuery:
     def test_list_meta_seeds_api(self, graph):
         """GET /api/v1/meta-seeds 返回正确格式"""
         from fastapi.testclient import TestClient
-        import consciousness_sea.interfaces.api as api
         api_module = sys.modules['consciousness_sea.interfaces.api']
 
         # 创建 mock 连接池
@@ -518,6 +509,7 @@ class TestScenario6APIQuery:
         mgr.generate_system_monitors()
 
         with patch("consciousness_sea.interfaces.api.META_SEED_ENABLED", True):
+            api_module.app.dependency_overrides.clear()
             client = TestClient(api_module.app)
             response = client.get("/api/v1/meta-seeds")
 
@@ -540,7 +532,6 @@ class TestScenario6APIQuery:
     def test_guardian_status_api(self, graph):
         """GET /api/v1/guardian/status 返回守护循环状态"""
         from fastapi.testclient import TestClient
-        import consciousness_sea.interfaces.api as api
         api_module = sys.modules['consciousness_sea.interfaces.api']
 
         mock_pool = MagicMock()
@@ -552,6 +543,7 @@ class TestScenario6APIQuery:
         api_module._guardian_loop = guardian_loop
 
         with patch("consciousness_sea.interfaces.api.META_SEED_ENABLED", True):
+            api_module.app.dependency_overrides.clear()
             client = TestClient(api_module.app)
             response = client.get("/api/v1/guardian/status")
 
@@ -566,7 +558,6 @@ class TestScenario6APIQuery:
     def test_trigger_guardian_api(self, graph):
         """POST /api/v1/guardian/trigger 立即执行"""
         from fastapi.testclient import TestClient
-        import consciousness_sea.interfaces.api as api
         api_module = sys.modules['consciousness_sea.interfaces.api']
 
         mock_pool = MagicMock()
@@ -578,6 +569,7 @@ class TestScenario6APIQuery:
         api_module._guardian_loop = guardian_loop
 
         with patch("consciousness_sea.interfaces.api.META_SEED_ENABLED", True):
+            api_module.app.dependency_overrides.clear()
             client = TestClient(api_module.app)
             response = client.post("/api/v1/guardian/trigger")
 

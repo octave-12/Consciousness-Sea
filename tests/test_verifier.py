@@ -2,17 +2,18 @@
 测试校验器 + 熏习引擎
 """
 
+import pathlib
 import sqlite3
 import sys
-import pathlib
+
 _root = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_root))
 sys.path.insert(0, str(_root / "backend" / "src"))
 
+from consciousness_sea.domain.answerer import answer_from_activation
 from consciousness_sea.domain.graph_db import GraphDB
 from consciousness_sea.domain.router import route
-from consciousness_sea.domain.answerer import answer_from_activation
-from consciousness_sea.domain.verifier import verify, apply_karma
+from consciousness_sea.domain.verifier import apply_karma, verify
 
 
 def _setup_db():

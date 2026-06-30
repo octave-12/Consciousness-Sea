@@ -15,10 +15,10 @@ Phase 5 CognitiveGoalManager 单元测试
 from __future__ import annotations
 
 import json
+import pathlib
 import sqlite3
 import sys
-import pathlib
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
 import pytest
@@ -27,31 +27,22 @@ _root = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_root))
 sys.path.insert(0, str(_root / "backend" / "src"))
 
-from consciousness_sea.metacognition.cognitive_goal import (
-    CognitiveGoalManager,
-    CognitiveGoalData,
-    GoalType,
-    GoalStatus,
-)
 from consciousness_sea.domain.graph_db import GraphDB
 from consciousness_sea.infrastructure.config import (
-    COGNITIVE_GOAL_ENABLED,
-    GOAL_LOW_CONF_THRESHOLD,
-    GOAL_LOW_DENSITY_RATIO,
-    GOAL_HIGH_CONFLICT_THRESHOLD,
-    GOAL_NEW_TERM_THRESHOLD,
     GOAL_DECAY_CYCLES,
-    GOAL_DECAY_FACTOR,
-    GOAL_EXPIRE_THRESHOLD,
-    GOAL_USER_ABSENCE_CYCLES,
+    GOAL_HIGH_CONFLICT_THRESHOLD,
+    GOAL_LOW_CONF_THRESHOLD,
+    GOAL_NEW_TERM_THRESHOLD,
     GOAL_POOL_MAX_SIZE,
-    GOAL_WEIGHT_USER_RELEVANCE,
-    GOAL_WEIGHT_SYSTEM_CORENESS,
-    GOAL_WEIGHT_UNCERTAINTY,
-    GOAL_WEIGHT_DECOMPOSABILITY,
+    GOAL_USER_ABSENCE_CYCLES,
     GUARDIAN_LOOP_INTERVAL,
 )
-
+from consciousness_sea.metacognition.cognitive_goal import (
+    CognitiveGoalData,
+    CognitiveGoalManager,
+    GoalStatus,
+    GoalType,
+)
 
 # ═══════════════════════════════════════════════════════════
 #  Fixtures
@@ -461,7 +452,7 @@ class TestGoalDedup:
             {"avg_karma_density": 0.5, "ripple_success_rate": 0.3, "conflict_frequency": GOAL_LOW_CONF_THRESHOLD + 1},
         )
         mgr.generate_goals()
-        row_before = graph.conn.execute(
+        graph.conn.execute(
             "SELECT priority_weight FROM cognitive_goals WHERE domain = '量子力学' AND goal_type = 'low_confidence'"
         ).fetchone()
 
@@ -670,7 +661,7 @@ class TestGoalCooling:
         )
         graph.conn.commit()
 
-        cooled = mgr.cool_goals()
+        mgr.cool_goals()
         # exploring 状态的目标不应被冷却
         row = graph.conn.execute(
             "SELECT status, priority_weight FROM cognitive_goals WHERE goal_id = 'goal_exploring_test'"

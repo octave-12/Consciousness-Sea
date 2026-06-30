@@ -10,15 +10,15 @@
 
 from __future__ import annotations
 
-import logging
 import json
+import logging
 import re
 from pathlib import Path
-from typing import Optional
+
+from consciousness_sea.infrastructure.config import MIN_KEYWORD_LENGTH, STOPWORDS_PATH
 
 from .graph_db import GraphDB
 from .router import RippleResult
-from consciousness_sea.infrastructure.config import STOPWORDS_PATH, MIN_KEYWORD_LENGTH
 
 log = logging.getLogger(__name__)
 
@@ -383,7 +383,12 @@ def apply_karma(
     Returns:
         实际修改的边数
     """
-    from consciousness_sea.infrastructure.config import KARMA_DELTA, KARMA_FULL_SET, KARMA_TOP_N, KARMA_MAX_PAIRS
+    from consciousness_sea.infrastructure.config import (
+        KARMA_DELTA,
+        KARMA_FULL_SET,
+        KARMA_MAX_PAIRS,
+        KARMA_TOP_N,
+    )
 
     if karma_direction == 0:
         return 0
@@ -502,7 +507,7 @@ def _post_karma_phase3(
     # 1. 别名回指记录
     try:
         if answer_text:
-            from consciousness_sea.learning.alias_expander import AliasExpander, BackrefEvent
+            from consciousness_sea.learning.alias_expander import AliasExpander
             events, unmatched = _extract_backref_events(result, answer_text, graph)
             if events or unmatched:
                 expander = AliasExpander(graph)
@@ -594,7 +599,7 @@ def _post_karma_phase4(
     在熏习完成后执行，不阻塞查询响应。
     异常时仅记录 WARNING 日志，不影响查询结果。
     """
-    from consciousness_sea.infrastructure.config import META_SEED_ENABLED, COGNITIVE_GOAL_ENABLED
+    from consciousness_sea.infrastructure.config import COGNITIVE_GOAL_ENABLED, META_SEED_ENABLED
 
     if not META_SEED_ENABLED:
         return
@@ -649,8 +654,9 @@ def _post_karma_phase6(
             return
 
         # 构造概念种子激活事件
-        from consciousness_sea.perception.perception import ConceptActivationEvent
         from datetime import datetime, timezone
+
+        from consciousness_sea.perception.perception import ConceptActivationEvent
         now = datetime.now(timezone.utc).isoformat(timespec='milliseconds')
 
         event = ConceptActivationEvent(

@@ -10,10 +10,9 @@ REQ-P2-009、REQ-P2-010、REQ-P2-011
 
 from __future__ import annotations
 
-import json
 import logging
 from datetime import datetime, timezone
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
 from .connection_pool import ConnectionPool
 
@@ -50,7 +49,7 @@ class KarmaCleaner:
         try:
             # 显式开启事务，确保所有删除操作原子性
             graph.conn.execute("BEGIN IMMEDIATE")
-            
+
             # 查找低权边
             rows = graph.conn.execute(
                 "SELECT source, target, relation, weight, source_tag "

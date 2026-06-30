@@ -12,17 +12,17 @@ T-022: verifier 扩展单元测试
 
 from __future__ import annotations
 
+import pathlib
 import sqlite3
 import sys
-import pathlib
 
 _root = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_root))
 sys.path.insert(0, str(_root / "backend" / "src"))
 
 from consciousness_sea.domain.graph_db import GraphDB
-from consciousness_sea.domain.verifier import verify, _reset_stopwords_cache
-from consciousness_sea.domain.router import RippleResult, ActivationNode
+from consciousness_sea.domain.router import ActivationNode, RippleResult
+from consciousness_sea.domain.verifier import _reset_stopwords_cache, verify
 
 
 def _setup_db():

@@ -17,9 +17,9 @@ Phase 6 HebbianBinder 单元测试
 
 from __future__ import annotations
 
+import pathlib
 import sqlite3
 import sys
-import pathlib
 from datetime import datetime, timezone
 from unittest.mock import patch
 
@@ -29,19 +29,20 @@ _root = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_root))
 sys.path.insert(0, str(_root / "backend" / "src"))
 
-from consciousness_sea.perception.hebbian_binder import HebbianBinder, HebbianBinderStatus
-from consciousness_sea.perception.perception import PerceptActivationEvent, ConceptActivationEvent, PerceptionChannel
 from consciousness_sea.domain.graph_db import GraphDB
 from consciousness_sea.infrastructure.config import (
-    HEBBIAN_TIME_WINDOW,
     HEBBIAN_LEARNING_RATE,
-    HEBBIAN_NEGATIVE_DECAY_ENABLED,
-    HEBBIAN_NEGATIVE_RATE,
     HEBBIAN_MAX_BINDINGS_PER_WINDOW,
-    KARMA_MIN,
+    HEBBIAN_NEGATIVE_DECAY_ENABLED,
     KARMA_MAX,
+    KARMA_MIN,
 )
-
+from consciousness_sea.perception.hebbian_binder import HebbianBinder, HebbianBinderStatus
+from consciousness_sea.perception.perception import (
+    ConceptActivationEvent,
+    PerceptActivationEvent,
+    PerceptionChannel,
+)
 
 # ═══════════════════════════════════════════════════════════
 #  Fixtures

@@ -13,9 +13,9 @@ Phase 6 SomaticAnchor 单元测试
 
 from __future__ import annotations
 
-import sys
 import pathlib
-from unittest.mock import patch, MagicMock
+import sys
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -23,13 +23,11 @@ _root = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_root))
 sys.path.insert(0, str(_root / "backend" / "src"))
 
-from consciousness_sea.perception.somatic_anchor import SomaticAnchor, SomaticFeatures
 from consciousness_sea.infrastructure.config import (
     SOMATIC_HIGH_TEMP_THRESHOLD,
-    SOMATIC_HIGH_MEMORY_THRESHOLD,
     SOMATIC_SLOW_RESPONSE_THRESHOLD,
 )
-
+from consciousness_sea.perception.somatic_anchor import SomaticAnchor, SomaticFeatures
 
 # ═══════════════════════════════════════════════════════════
 #  Fixtures

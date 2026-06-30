@@ -7,17 +7,17 @@ Session 管理器单元测试 (TASK-5.5)
 - 连接归还保证（异常时也归还）
 """
 
+import pathlib
 import sqlite3
 import sys
-import pathlib
 
 _root = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_root))
 sys.path.insert(0, str(_root / "backend" / "src"))
 
-from consciousness_sea.infrastructure.connection_pool import ConnectionPool
-from consciousness_sea.infrastructure.session_manager import SessionManager, SessionContext
 from consciousness_sea.domain.graph_db import GraphDB
+from consciousness_sea.infrastructure.connection_pool import ConnectionPool
+from consciousness_sea.infrastructure.session_manager import SessionContext, SessionManager
 
 
 def _build_test_db(db_path: str) -> None:
@@ -188,7 +188,6 @@ class TestSessionResourceRelease:
         try:
             # 获取一个 session
             ctx = session_mgr.create_session()
-            graph_ref = ctx.graph
             session_mgr.end_session(ctx)
 
             # 连接应已归还，可以再次获取
@@ -246,7 +245,6 @@ class TestSessionConnectionGuarantee:
         pool, session_mgr = _make_session_manager(tmp_path)
         try:
             ctx = session_mgr.create_session()
-            graph_ref = ctx.graph
             ctx.cleanup()  # 手动 cleanup
             assert ctx.graph is None
 

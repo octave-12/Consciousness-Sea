@@ -24,33 +24,26 @@ import json
 import logging
 import threading
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Optional
 
 from consciousness_sea.domain.graph_db import GraphDB
-from .meta_seed import MetaSeedManager, MetaSeedCategory, MetaSeedData
 from consciousness_sea.infrastructure.config import (
-    META_SEED_ENABLED,
-    GUARDIAN_LOOP_INTERVAL,
-    GUARDIAN_LOOP_TIMEOUT,
-    GUARDIAN_LOOP_INITIAL_DELAY,
-    GUARDIAN_METRICS_WINDOW,
-    META_SEED_DORMANT_CYCLES,
-    META_EXPLORE_WINDOW,
-    META_EXPLORE_LOW_CONF_THRESHOLD,
-    META_KARMA_DELTA_THRESHOLD,
-    META_KARMA_INITIAL_WEIGHT,
-    META_ALERT_CONFLICT_THRESHOLD,
-    CONFIDENCE_LOW,
     COGNITIVE_GOAL_ENABLED,
     CURIOSITY_ENGINE_ENABLED,
     GOAL_AUTO_EXPLORE_THRESHOLD,
     GOAL_MAX_EXPLORE_PER_CYCLE,
-    PERCEPTION_ENABLED,
+    GUARDIAN_LOOP_INITIAL_DELAY,
+    GUARDIAN_LOOP_INTERVAL,
+    GUARDIAN_LOOP_TIMEOUT,
+    GUARDIAN_METRICS_WINDOW,
+    META_SEED_ENABLED,
     MULTIMODAL_ALIGNMENT_ENABLED,
     MULTIMODAL_ALIGNMENT_INTERVAL,
+    PERCEPTION_ENABLED,
 )
+
+from .meta_seed import MetaSeedCategory, MetaSeedManager
 
 log = logging.getLogger(__name__)
 
@@ -636,7 +629,7 @@ class GuardianLoop:
 
         try:
             # 获取 pending 目标按优先级降序
-            from .cognitive_goal import GoalStatus, CognitiveGoalData
+            from .cognitive_goal import GoalStatus
             pending_goals = self._goal_mgr.list_goals(status=GoalStatus.PENDING)
 
             # 取前 GOAL_MAX_EXPLORE_PER_CYCLE 个

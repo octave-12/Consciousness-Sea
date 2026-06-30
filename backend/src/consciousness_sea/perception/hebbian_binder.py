@@ -11,21 +11,21 @@ import logging
 import threading
 from collections import deque
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from typing import Optional
+from datetime import datetime
 
 from consciousness_sea.domain.graph_db import GraphDB
-from .perception import PerceptActivationEvent, ConceptActivationEvent
 from consciousness_sea.infrastructure.config import (
-    HEBBIAN_TIME_WINDOW,
+    HEBBIAN_CHECK_INTERVAL,
     HEBBIAN_LEARNING_RATE,
+    HEBBIAN_MAX_BINDINGS_PER_WINDOW,
     HEBBIAN_NEGATIVE_DECAY_ENABLED,
     HEBBIAN_NEGATIVE_RATE,
-    HEBBIAN_MAX_BINDINGS_PER_WINDOW,
-    HEBBIAN_CHECK_INTERVAL,
-    KARMA_MIN,
+    HEBBIAN_TIME_WINDOW,
     KARMA_MAX,
+    KARMA_MIN,
 )
+
+from .perception import ConceptActivationEvent, PerceptActivationEvent
 
 log = logging.getLogger(__name__)
 
