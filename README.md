@@ -21,19 +21,19 @@
 
 | 步 | 状态 | 做什么 |
 |:--:|------|--------|
-| **第一步** | 现在就可以 | 共享知识库 + 一群领域小专家 + 确定性路由器 |
+| **第一步** | 现在就可以用 | 共享知识库 + 一群领域小专家 + 确定性路由器 |
 | **第二步** | 1-3年 | 专家学会自己叫人，路由从运行时经验中生长 |
 | **第三步** | 3-10年 | 连"专家"都消解掉，只剩节点间的激活与衰减 |
 
 每一步减少一个"人做决定"的地方。第一步人不再写答案（那是 prompt engineering），第二步人不再写路由规则，第三步人不再定义专家边界。
 
-详细路线：[`路线图.md`](./路线图.md)
+详细路线：[`docs/roadmap.md`](docs/roadmap.md)
 
 ## 已知缺陷与补齐计划
 
-架构不是完美的。19 个已知问题，分四个阶段补齐——从"跑得起来"到"自我生长"。
+架构不是完美的。9 个已知问题，分四个阶段补齐——从"跑得起来"到"自我生长"。
 
-详见：[`补齐路线.md`](./补齐路线.md)
+详见：[`docs/supplement-roadmap.md`](docs/supplement-roadmap.md)
 
 ---
 
@@ -51,30 +51,119 @@
 | 熏习 | 反复激活 → 连接增强 → 形成稳定路径 |
 | 现行 | 当前激活状态（推理的瞬时快照） |
 
-详见：[`识海——作为技术框架.md`](./识海——作为技术框架.md)
+详见：[`docs/consciousness-sea-as-framework.md`](docs/consciousness-sea-as-framework.md)
 
 ---
 
-## 架构概要
+## 架构概览
 
 ```
-         ┌───────────────────────────────┐
-         │       共享知识库 (Graph DB)     │
-         │    概念节点 + 关系边 + 激活值   │
-         └──────────────┬────────────────┘
+         ┌──────────────────────────────────┐
+         │      共享知识库 (Graph DB)        │
+         │   概念节点 + 关系边 + 激活值       │
+         └──────────────┬───────────────────┘
                         │
-    ┌───────┬───────┬───┴───┬───────┬───────┐
+    ┌───────┬───────┬───┴───┬──────┬──────┐
   诗词    法律    医学    数学    物理    常识
-    │       │       │       │       │       │
-    └───────┴───────┴───┬───┴───────┴───────┘
+    │       │       │       │      │      │
+    └───────┴───────┴───┬───┴──────┴──────┘
                         │
-              ┌─────────┴─────────┐
-              │   确定性路由器     │
+              ┌─────────┴──────────┐
+              │   确定性路由器      │
               │ (概念激活模式匹配)  │
-              └───────────────────┘
+              └────────────────────┘
 ```
 
-详见：[`架构.md`](./架构.md)
+详见：[`docs/architecture.md`](docs/architecture.md)
+
+---
+
+## 项目结构
+
+```
+consciousness-sea/
+├── backend/
+│   ├── cli.py                          # CLI 入口
+│   ├── config/
+│   │   └── .env.example                # 环境变量模板
+│   ├── scripts/
+│   │   ├── import_knowledge_base.py     # 知识库导入
+│   │   └── import_related.py           # 关系导入
+│   └── src/
+│       └── consciousness_sea/          # 核心包
+│           ├── domain/                  # 领域层：路由、回答、图数据库、校验
+│           ├── expert/                  # 专家层：专家管理、上下文注入、交叉验证
+│           ├── infrastructure/          # 基础设施：连接池、会话、观测、配置
+│           ├── interfaces/              # 接口层：FastAPI 服务
+│           ├── learning/                # 学习层：熏习、冷启动、检查点、别名扩展
+│           ├── metacognition/           # 元认知层：元种子、守卫环、认知目标、好奇心
+│           └── perception/              # 感知层：多模态锚定、Hebbian 关联
+├── frontend/                            # Vue3 + Vite + TypeScript 前端
+├── tests/                               # 996+ 测试用例
+├── docs/                                # 文档
+├── data/                                # 数据文件
+├── pyproject.toml                       # 项目配置
+└── LICENSE                              # Apache 2.0
+```
+
+---
+
+## 六大阶段
+
+| Phase | 主题 | 核心模块 |
+|:-----:|------|---------|
+| 0-1 | 基座 | GraphDB、Router、Verifier、Tokenizer、DomainInference |
+| 1 | 专家组 | ExpertManager、ContextInjector、CrossValidator、ExpertReliability |
+| 2 | 熏习 | DistillationPool、KarmaCleaner、ParamEvaluator、ParamStats |
+| 3 | 自生长 | AliasExpander、SeedCandidate、ColdStart、Checkpoint |
+| 4 | 元种子 | MetaSeedManager、GuardianLoop |
+| 5 | 认知目标 | CognitiveGoalManager、CuriosityEngine |
+| 6 | 具身感知 | PerceptionManager、VisualAnchor、AudioAnchor、SomaticAnchor、HebbianBinder、MultimodalAligner |
+
+---
+
+## 快速开始
+
+### 环境要求
+
+- Python 3.12+
+- SQLite（内置）
+
+### 安装
+
+```bash
+git clone https://gitee.com/octave-12/consciousness-sea.git
+cd consciousness-sea
+
+pip install -e ".[dev]"
+```
+
+### 运行
+
+```bash
+consciousness-sea-api
+
+python -m backend.cli query "量子力学的基本原理"
+```
+
+### 测试
+
+```bash
+pytest
+pytest tests/test_router.py
+```
+
+---
+
+## 技术栈
+
+| 层 | 技术 |
+|----|------|
+| 后端 | Python 3.12+ / FastAPI / Pydantic |
+| 数据库 | SQLite（邻接表） |
+| 前端 | Vue 3 / Vite / TypeScript |
+| AI | LoRA 热切换 / Ollama（可选） |
+| 测试 | pytest / pytest-asyncio / httpx |
 
 ---
 
@@ -88,4 +177,10 @@
 
 ---
 
-*实验中的故事 · 第三章*
+## 许可证
+
+[Apache License 2.0](LICENSE)
+
+---
+
+*实验中的故事 · 第三代*
