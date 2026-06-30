@@ -243,60 +243,52 @@ class PerceptionManager:
         """接收感知激活事件，分发给 Hebbian 绑定器
 
         由各感知锚定器调用。
-        线程安全: 使用 _event_lock 保护事件队列、通道状态和数据库操作。
+        线程安全: _event_lock 仅保护事件队列和通道状态，
+        数据库操作在锁外执行以减少持锁时间。
         """
         with self._event_lock:
             self._percept_queue.append(event)
-
-            # 更新通道状态（在锁内，与 get_status 的读取互斥）
             ch = event.channel.value
             if ch in self._channel_status:
                 self._channel_status[ch].last_activation = event.timestamp
 
-        # 转发给 Hebbian 绑定器（HebbianBinder 有自己的锁）
         if self._hebbian_binder is not None:
             self._hebbian_binder.on_percept_activation(event)
 
-        # 数据库操作使用 _event_lock 保护，避免与 HebbianBinder 后台线程并发写冲突
-        with self._event_lock:
-            # 更新 seeds 表中的激活值
-            try:
-                self._graph.conn.execute(
-                    "UPDATE seeds SET activation = ? WHERE label = ?",
-                    (event.activation, event.perceptual_seed),
-                )
-            except Exception as e:
-                log.warning("感知元种子激活值更新失败: %s", e)
+        try:
+            self._graph.conn.execute(
+                "UPDATE seeds SET activation = ? WHERE label = ?",
+                (event.activation, event.perceptual_seed),
+            )
+        except Exception as e:
+            log.warning("感知元种子激活值更新失败: %s", e)
 
-            # 写入 perception_events 表
-            try:
-                self._graph.conn.execute(
-                    "INSERT INTO perception_events "
-                    "(perceptual_seed, activation, channel, timestamp) "
-                    "VALUES (?, ?, ?, ?)",
-                    (event.perceptual_seed, event.activation,
-                     event.channel.value, event.timestamp),
-                )
-            except Exception as e:
-                log.warning("感知事件写入失败: %s", e)
+        try:
+            self._graph.conn.execute(
+                "INSERT INTO perception_events "
+                "(perceptual_seed, activation, channel, timestamp) "
+                "VALUES (?, ?, ?, ?)",
+                (event.perceptual_seed, event.activation,
+                 event.channel.value, event.timestamp),
+            )
+        except Exception as e:
+            log.warning("感知事件写入失败: %s", e)
 
-            # 更新 perceptual_seeds 表的 last_activation 和 activation_count
-            try:
-                self._graph.conn.execute(
-                    "UPDATE perceptual_seeds SET "
-                    "last_activation = ?, activation_count = activation_count + 1, "
-                    "updated_at = ? WHERE label = ?",
-                    (event.timestamp, datetime.now(timezone.utc).isoformat(),
-                     event.perceptual_seed),
-                )
-            except Exception as e:
-                log.warning("感知元种子状态更新失败: %s", e)
+        try:
+            self._graph.conn.execute(
+                "UPDATE perceptual_seeds SET "
+                "last_activation = ?, activation_count = activation_count + 1, "
+                "updated_at = ? WHERE label = ?",
+                (event.timestamp, datetime.now(timezone.utc).isoformat(),
+                 event.perceptual_seed),
+            )
+        except Exception as e:
+            log.warning("感知元种子状态更新失败: %s", e)
 
-            # 统一提交一次，减少 commit 次数
-            try:
-                self._graph.conn.commit()
-            except Exception as e:
-                log.warning("感知事件提交失败: %s", e)
+        try:
+            self._graph.conn.commit()
+        except Exception as e:
+            log.warning("感知事件提交失败: %s", e)
 
     def on_concept_activation(self, event: ConceptActivationEvent) -> None:
         """接收概念种子激活事件，转发给 Hebbian 绑定器

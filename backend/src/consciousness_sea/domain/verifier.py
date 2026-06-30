@@ -11,8 +11,8 @@
 from __future__ import annotations
 
 import logging
+import json
 import re
-import warnings
 from pathlib import Path
 from typing import Optional
 
@@ -245,30 +245,6 @@ def _extract_keywords_v2(text: str, graph: GraphDB) -> list[tuple[str, float]]:
 
 
 # ═══════════════════════════════════════════════════════════════
-#  旧版关键词提取（保留向后兼容）
-# ═══════════════════════════════════════════════════════════════
-
-def _extract_keywords(text: str) -> list[str]:
-    """[DEPRECATED] 从文本中提取中文关键词（去停用词、去重）。
-
-    此方法已被 _extract_keywords_v2() 替代，保留仅为向后兼容。
-    """
-    warnings.warn(
-        "_extract_keywords() is deprecated, use _extract_keywords_v2() instead",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    chinese = re.findall(r'[\u4e00-\u9fff]{2,}', text)
-    seen = set()
-    result = []
-    for w in chinese:
-        if w not in seen and w not in BUILTIN_STOP_WORDS:
-            seen.add(w)
-            result.append(w)
-    return result
-
-
-# ═══════════════════════════════════════════════════════════════
 #  校验主函数
 # ═══════════════════════════════════════════════════════════════
 
@@ -337,7 +313,6 @@ def verify(
         else:
             seed = graph.get_seed(kw)
             if seed and seed.get('aliases'):
-                import json
                 try:
                     aliases = json.loads(seed['aliases'])
                     if any(a in active_labels for a in aliases):

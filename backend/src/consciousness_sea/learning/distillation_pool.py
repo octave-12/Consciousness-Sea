@@ -150,12 +150,11 @@ class DistillationPool:
         canonical_source = source
         canonical_target = target
 
-        self._graph._ensure_alias_index()
-        if self._graph._alias_index is not None:
-            if source in self._graph._alias_index:
-                canonical_source = self._graph._alias_index[source]
-            if target in self._graph._alias_index:
-                canonical_target = self._graph._alias_index[target]
+        alias_index = self._graph.get_alias_index()
+        if source in alias_index:
+            canonical_source = alias_index[source]
+        if target in alias_index:
+            canonical_target = alias_index[target]
 
         # 2. 关系等价映射
         canonical_relation = RELATION_EQUIVALENCE_MAP.get(relation, relation)
@@ -199,7 +198,7 @@ class DistillationPool:
             if canonical_rel == canonical_relation:
                 equivalent_relations.add(rel)
 
-        if len(equivalent_relations) > 1:
+        if equivalent_relations:
             placeholders = ','.join('?' * len(equivalent_relations))
             row = self._graph.conn.execute(
                 f"SELECT candidate_id FROM distillation_pool "
@@ -215,17 +214,21 @@ class DistillationPool:
         source_neighbors = self._get_1hop_neighbors(canonical_source)
         target_neighbors = self._get_1hop_neighbors(canonical_target)
 
-        # 查找所有 pending/cooled 候选
+        if not source_neighbors and not target_neighbors:
+            return None
+
         candidates = self._graph.conn.execute(
             "SELECT candidate_id, canonical_source, canonical_target "
-            "FROM distillation_pool WHERE status != 'upgraded'"
+            "FROM distillation_pool WHERE status != 'upgraded' LIMIT 50"
         ).fetchall()
 
         for c in candidates:
+            if c['candidate_id'] == existing_id:
+                continue
+
             c_source_neighbors = self._get_1hop_neighbors(c['canonical_source'])
             c_target_neighbors = self._get_1hop_neighbors(c['canonical_target'])
 
-            # 计算 source 和 target 的邻居重叠度
             overlap = self._compute_neighbor_overlap(
                 source_neighbors, c_source_neighbors
             ) * self._compute_neighbor_overlap(
@@ -346,27 +349,17 @@ class DistillationPool:
                 'cooled_count': int,
             }
         """
-        total = self._graph.conn.execute(
-            "SELECT COUNT(*) FROM distillation_pool"
-        ).fetchone()[0]
-
-        upgraded = self._graph.conn.execute(
-            "SELECT COUNT(*) FROM distillation_pool WHERE status='upgraded'"
-        ).fetchone()[0]
-
-        pending = self._graph.conn.execute(
-            "SELECT COUNT(*) FROM distillation_pool WHERE status='pending'"
-        ).fetchone()[0]
-
-        cooled = self._graph.conn.execute(
-            "SELECT COUNT(*) FROM distillation_pool WHERE status='cooled'"
-        ).fetchone()[0]
+        rows = self._graph.conn.execute(
+            "SELECT status, COUNT(*) as cnt FROM distillation_pool GROUP BY status"
+        ).fetchall()
+        counts = {r['status']: r['cnt'] for r in rows}
+        total = sum(counts.values())
 
         return {
             'total_candidates': total,
-            'upgraded_count': upgraded,
-            'pending_count': pending,
-            'cooled_count': cooled,
+            'upgraded_count': counts.get('upgraded', 0),
+            'pending_count': counts.get('pending', 0),
+            'cooled_count': counts.get('cooled', 0),
         }
 
     def rebuild_from_personal_karma(self) -> int:

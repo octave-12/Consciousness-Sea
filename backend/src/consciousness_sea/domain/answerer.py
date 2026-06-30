@@ -9,13 +9,28 @@ Phase 1 升级: 激活种子 + 路径作为 context 注入 LoRA 专家模型。
 from __future__ import annotations
 
 import logging
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from .graph_db import GraphDB
 from .router import RippleResult, ActivationNode
 from consciousness_sea.infrastructure.config import RELATION_NAMES, TOP_K_SEEDS, TOP_K_PATHS
 
+if TYPE_CHECKING:
+    from consciousness_sea.expert.expert_manager import ExpertManager
+
 log = logging.getLogger(__name__)
+
+
+def _make_fallback_response(retrieval_text: str) -> dict:
+    return {
+        'expert_answer': None,
+        'retrieval_answer': retrieval_text,
+        'expert_domain': None,
+        'expert_available': False,
+        'reliability_score': None,
+        'cross_validation_status': 'none',
+        'cross_validation_discount': 1.0,
+    }
 
 
 def answer_from_activation(
@@ -153,7 +168,7 @@ def answer_as_dict(result: RippleResult) -> dict:
 def answer_with_expert(
     result: RippleResult,
     graph: Optional[GraphDB],
-    expert_manager: Optional[object] = None,
+    expert_manager: Optional[ExpertManager] = None,
 ) -> dict:
     """使用专家模型生成回答（Phase 1），不可用时降级到 Phase 0。
 
@@ -181,28 +196,12 @@ def answer_with_expert(
     # ── 降级条件 1: expert_manager 为 None 或不可用 ──
     if expert_manager is None or not expert_manager.expert_available:
         retrieval_text = answer_from_activation(result, graph)
-        return {
-            'expert_answer': None,
-            'retrieval_answer': retrieval_text,
-            'expert_domain': None,
-            'expert_available': False,
-            'reliability_score': None,
-            'cross_validation_status': 'none',
-            'cross_validation_discount': 1.0,
-        }
+        return _make_fallback_response(retrieval_text)
 
     # ── 降级条件 2: 空激活 ──
     if not result.top_seeds:
         retrieval_text = answer_from_activation(result, graph)
-        return {
-            'expert_answer': None,
-            'retrieval_answer': retrieval_text,
-            'expert_domain': None,
-            'expert_available': False,
-            'reliability_score': None,
-            'cross_validation_status': 'none',
-            'cross_validation_discount': 1.0,
-        }
+        return _make_fallback_response(retrieval_text)
 
     # ── 构造上下文 prompt ──
     try:
@@ -212,15 +211,7 @@ def answer_with_expert(
     except Exception as e:
         log.error("构造上下文 prompt 失败，降级到 Phase 0: %s", e, exc_info=True)
         retrieval_text = answer_from_activation(result, graph)
-        return {
-            'expert_answer': None,
-            'retrieval_answer': retrieval_text,
-            'expert_domain': None,
-            'expert_available': False,
-            'reliability_score': None,
-            'cross_validation_status': 'none',
-            'cross_validation_discount': 1.0,
-        }
+        return _make_fallback_response(retrieval_text)
 
     # ── 检索式回答（始终保留）──
     retrieval_text = answer_from_activation(result, graph)
@@ -240,15 +231,7 @@ def answer_with_expert(
 
             if inference_result.fallback or not inference_result.answer_text:
                 # 专家推理降级
-                return {
-                    'expert_answer': None,
-                    'retrieval_answer': retrieval_text,
-                    'expert_domain': None,
-                    'expert_available': False,
-                    'reliability_score': None,
-                    'cross_validation_status': 'none',
-                    'cross_validation_discount': 1.0,
-                }
+                return _make_fallback_response(retrieval_text)
 
             return {
                 'expert_answer': inference_result.answer_text,
@@ -270,15 +253,7 @@ def answer_with_expert(
 
             if not inference_results:
                 # 所有领域推理均降级
-                return {
-                    'expert_answer': None,
-                    'retrieval_answer': retrieval_text,
-                    'expert_domain': None,
-                    'expert_available': False,
-                    'reliability_score': None,
-                    'cross_validation_status': 'none',
-                    'cross_validation_discount': 1.0,
-                }
+                return _make_fallback_response(retrieval_text)
 
             # 执行交叉验证
             answers = [r.answer_text for r in inference_results]
@@ -309,12 +284,4 @@ def answer_with_expert(
 
     except Exception as e:
         log.error("专家推理异常，降级到 Phase 0: %s", e, exc_info=True)
-        return {
-            'expert_answer': None,
-            'retrieval_answer': retrieval_text,
-            'expert_domain': None,
-            'expert_available': False,
-            'reliability_score': None,
-            'cross_validation_status': 'none',
-            'cross_validation_discount': 1.0,
-        }
+        return _make_fallback_response(retrieval_text)

@@ -98,6 +98,9 @@ def cmd_server(args):
 
 
 def main():
+    from consciousness_sea.infrastructure.config import validate_config
+    validate_config()
+
     parser = argparse.ArgumentParser(description='识海 CLI')
     sub = parser.add_subparsers(dest='command')
 

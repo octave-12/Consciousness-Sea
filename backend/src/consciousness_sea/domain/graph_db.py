@@ -9,26 +9,34 @@ GraphDB — SQLite 邻接表封装
 
 import sqlite3
 import json
-import re
 import logging
 import threading
-import warnings
 from typing import Optional
 from consciousness_sea.infrastructure.config import DEFAULT_DB_PATH, ENABLE_FUZZY, FUZZY_EDIT_DISTANCE, BUSY_TIMEOUT_MS, META_SEED_ENABLED, COGNITIVE_GOAL_ENABLED, PERCEPTION_ENABLED
 
 log = logging.getLogger(__name__)
+DEFAULT_KARMA_WEIGHT = 0.5
 
 
 class GraphDB:
-    """知识图谱数据库封装"""
+    """知识图谱数据库封装
+
+    线程安全说明:
+      - 同一连接不应被多线程并发使用（SQLite 限制）
+      - 连接池模式下每个请求持有独立连接，天然隔离
+      - 守护线程（Checkpoint/Guardian/Perception）使用独立连接
+      - _cache_lock 仅保护懒加载缓存，不保护 conn 操作
+      - 如需跨线程共享连接，应通过 execute_safe() 方法
+    """
 
     def __init__(self, db_path: str = DEFAULT_DB_PATH):
         self.db_path = db_path
         self.conn: Optional[sqlite3.Connection] = None
-        self._alias_index: Optional[dict[str, str]] = None  # 懒加载缓存
-        self._label_index: Optional[set[str]] = None  # 懒加载缓存
-        self._edge_count_map: Optional[dict[str, int]] = None  # 懒加载缓存
-        self._cache_lock = threading.Lock()  # 保护懒加载的线程锁
+        self._alias_index: Optional[dict[str, str]] = None
+        self._label_index: Optional[set[str]] = None
+        self._edge_count_map: Optional[dict[str, int]] = None
+        self._cache_lock = threading.Lock()
+        self._conn_lock = threading.Lock()
 
     def connect(self, readonly: bool = False):
         """打开数据库连接"""
@@ -57,6 +65,35 @@ class GraphDB:
         if self.conn:
             self.conn.close()
             self.conn = None
+
+    def execute_safe(self, sql: str, params: tuple = ()) -> sqlite3.Cursor:
+        """线程安全的 SQL 执行代理
+
+        使用 _conn_lock 保护 conn.execute()，适用于需要跨线程
+        共享同一连接的场景（如守护线程）。
+
+        对于连接池模式下每个请求持有独立连接的场景，
+        直接使用 self.conn.execute() 即可（天然隔离）。
+
+        Args:
+            sql: SQL 语句
+            params: 参数元组
+
+        Returns:
+            sqlite3.Cursor
+        """
+        with self._conn_lock:
+            return self.conn.execute(sql, params)
+
+    def commit_safe(self) -> None:
+        """线程安全的 commit 代理"""
+        with self._conn_lock:
+            self.conn.commit()
+
+    def get_alias_index(self) -> dict[str, str]:
+        """公开的别名索引访问器（替代直接访问 _alias_index）"""
+        self._ensure_alias_index()
+        return dict(self._alias_index) if self._alias_index else {}
 
     def ensure_phase2_tables(self) -> None:
         """自动创建 Phase 2 新增表（karma_edges_personal, distillation_pool, param_stats）
@@ -598,34 +635,6 @@ class GraphDB:
                 edge_count_map[r['source']] = r['cnt']
             self._edge_count_map = edge_count_map
             return self._edge_count_map
-
-    def _tokenize(self, query: str) -> list[str]:
-        """
-        [DEPRECATED] 简单分词：提取中文连续段、英文单词、数字。
-
-        此方法已被 tokenizer.tokenize() 替代，保留仅为向后兼容。
-        新代码请使用 tokenizer.tokenize()。
-        """
-        warnings.warn(
-            "GraphDB._tokenize() is deprecated, use tokenizer.tokenize() instead",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        tokens = []
-        # 中文连续段（粒度：单字到 4 字，以及更长）
-        chinese_spans = re.findall(r'[\u4e00-\u9fff]+', query)
-        for span in chinese_spans:
-            # 先尝试整体
-            tokens.append(span)
-            # 再尝试 2-gram（用于组合词拆分时的后备）
-            if len(span) >= 4:
-                for i in range(0, len(span) - 1, 2):
-                    tokens.append(span[i:i+2])
-        # 英文/数字词
-        for w in re.findall(r'[a-zA-Z0-9]+', query):
-            tokens.append(w)
-        return tokens
-
     # ═══════════════════════════════════════════════════════════
     # 边查询
     # ═══════════════════════════════════════════════════════════
@@ -686,7 +695,7 @@ class GraphDB:
                 (new_w, source, target, relation)
             )
         else:
-            new_w = max(KARMA_MIN, min(KARMA_MAX, 0.5 + delta))
+            new_w = max(KARMA_MIN, min(KARMA_MAX, DEFAULT_KARMA_WEIGHT + delta))
             self.conn.execute(
                 "INSERT OR IGNORE INTO karma_edges "
                 "(source,target,relation,weight,source_tag) VALUES (?,?,?,?,?)",
@@ -718,14 +727,14 @@ class GraphDB:
         from consciousness_sea.infrastructure.config import KARMA_MIN, KARMA_MAX
 
         # C-3: 使用 UPSERT 消除并发竞态
-        # INSERT 新边（weight = 0.5 + delta），若冲突则 UPDATE（weight = weight + delta）
+        # INSERT 新边（weight = DEFAULT_KARMA_WEIGHT + delta），若冲突则 UPDATE（weight = weight + delta）
         # karma_edges 表有 PRIMARY KEY (source, target, relation)，可直接 ON CONFLICT
         self.conn.execute(
             "INSERT INTO karma_edges (source, target, relation, weight, source_tag) "
             "VALUES (?, ?, ?, ?, 'karma_delta') "
             "ON CONFLICT (source, target, relation) DO UPDATE "
             "SET weight = MAX(?, MIN(?, weight + ?))",
-            (source, target, relation, max(KARMA_MIN, min(KARMA_MAX, 0.5 + delta)),
+            (source, target, relation, max(KARMA_MIN, min(KARMA_MAX, DEFAULT_KARMA_WEIGHT + delta)),
              KARMA_MIN, KARMA_MAX, delta)
         )
 
@@ -780,7 +789,7 @@ class GraphDB:
             "ON CONFLICT (user_label, source, target, relation) DO UPDATE "
             "SET weight = MAX(?, MIN(?, weight + ?)), updated_at = ?",
             (user_label, source, target, relation,
-             max(KARMA_MIN, min(KARMA_MAX, 0.5 + delta)), now,
+             max(KARMA_MIN, min(KARMA_MAX, DEFAULT_KARMA_WEIGHT + delta)), now,
              KARMA_MIN, KARMA_MAX, delta, now)
         )
 

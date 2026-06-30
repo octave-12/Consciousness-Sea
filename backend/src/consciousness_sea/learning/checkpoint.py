@@ -186,6 +186,7 @@ class CheckpointManager:
         file_size_bytes = final_path.stat().st_size
 
         # 5. 记录 checkpoint_meta 表
+        self._graph.conn.execute("BEGIN IMMEDIATE")
         self._graph.conn.execute(
             "INSERT INTO checkpoint_meta "
             "(checkpoint_id, tag, edge_count, file_path, file_size_bytes, created_at, source) "

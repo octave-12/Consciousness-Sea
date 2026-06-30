@@ -17,6 +17,8 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from enum import Enum
 
+SEED_CANDIDATE_INITIAL_WEIGHT = 0.05
+
 from consciousness_sea.infrastructure.config import (
     CANDIDATE_SEED_AUTO_CREATE,
     CANDIDATE_SEED_EXPIRE_DAYS,
@@ -299,26 +301,12 @@ class SeedCandidateManager:
         Returns:
             包含总数、各状态计数、最近升级记录的字典
         """
-        total = self._graph.conn.execute(
-            "SELECT COUNT(*) FROM candidate_seeds"
-        ).fetchone()[0]
+        rows = self._graph.conn.execute(
+            "SELECT status, COUNT(*) as cnt FROM candidate_seeds GROUP BY status"
+        ).fetchall()
+        counts = {r['status']: r['cnt'] for r in rows}
+        total = sum(counts.values())
 
-        candidate_count = self._graph.conn.execute(
-            "SELECT COUNT(*) FROM candidate_seeds WHERE status = ?",
-            (CandidateStatus.CANDIDATE,),
-        ).fetchone()[0]
-
-        promoted_count = self._graph.conn.execute(
-            "SELECT COUNT(*) FROM candidate_seeds WHERE status = ?",
-            (CandidateStatus.PROMOTED,),
-        ).fetchone()[0]
-
-        expired_count = self._graph.conn.execute(
-            "SELECT COUNT(*) FROM candidate_seeds WHERE status = ?",
-            (CandidateStatus.EXPIRED,),
-        ).fetchone()[0]
-
-        # 最近升级记录（最多 10 条）
         recent_rows = self._graph.conn.execute(
             "SELECT label, domain, promoted_at, count "
             "FROM candidate_seeds "
@@ -339,9 +327,9 @@ class SeedCandidateManager:
 
         return {
             "total_candidates": total,
-            "candidate_count": candidate_count,
-            "promoted_count": promoted_count,
-            "expired_count": expired_count,
+            "candidate_count": counts.get("candidate", 0),
+            "promoted_count": counts.get("promoted", 0),
+            "expired_count": counts.get("expired", 0),
             "recent_promotions": recent_promotions,
         }
 
@@ -371,8 +359,8 @@ class SeedCandidateManager:
             return False
 
         # 排除 2: 已通过别名关联
-        self._graph._ensure_alias_index()
-        if keyword in self._graph._alias_index:
+        alias_index = self._graph.get_alias_index()
+        if keyword in alias_index:
             return False
 
         # 排除 3: 已有候选种子记录（status='candidate'）
@@ -532,9 +520,9 @@ class SeedCandidateManager:
             # 正向边: new_seed → co_seed
             cursor_forward = self._graph.conn.execute(
                 "INSERT INTO karma_edges (source, target, relation, weight, source_tag) "
-                "VALUES (?, ?, 'RELATED', 0.05, 'candidate_promotion') "
+                "VALUES (?, ?, 'RELATED', ?, 'candidate_promotion') "
                 "ON CONFLICT (source, target, relation) DO NOTHING",
-                (new_seed_label, co_seed),
+                (new_seed_label, co_seed, SEED_CANDIDATE_INITIAL_WEIGHT),
             )
             if cursor_forward.rowcount > 0:
                 edge_count += 1
@@ -542,9 +530,9 @@ class SeedCandidateManager:
             # 反向边: co_seed → new_seed
             cursor_backward = self._graph.conn.execute(
                 "INSERT INTO karma_edges (source, target, relation, weight, source_tag) "
-                "VALUES (?, ?, 'RELATED', 0.05, 'candidate_promotion') "
+                "VALUES (?, ?, 'RELATED', ?, 'candidate_promotion') "
                 "ON CONFLICT (source, target, relation) DO NOTHING",
-                (co_seed, new_seed_label),
+                (co_seed, new_seed_label, SEED_CANDIDATE_INITIAL_WEIGHT),
             )
             if cursor_backward.rowcount > 0:
                 edge_count += 1

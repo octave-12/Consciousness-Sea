@@ -161,8 +161,9 @@ class ColdStartManager:
             ColdStartState 数据类实例
         """
         # 快速路径：缓存命中
-        if user_label in self._cache:
-            return self._cache[user_label]
+        cached = self._cache.get(user_label)
+        if cached is not None:
+            return cached
 
         # 慢路径：加锁加载
         with self._cache_lock:

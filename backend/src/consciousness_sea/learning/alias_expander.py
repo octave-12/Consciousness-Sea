@@ -445,18 +445,13 @@ class AliasExpander:
         """
         conn = self._graph.conn
 
-        total_tracked = conn.execute(
-            "SELECT COUNT(*) FROM alias_backref_events WHERE status = 'tracking' "
-        ).fetchone()[0]
-
-        total_aliased = conn.execute(
-            "SELECT COUNT(*) FROM alias_backref_events WHERE status = 'aliased' "
-        ).fetchone()[0]
-
-        total_conflicted = conn.execute(
-            "SELECT COUNT(*) FROM alias_backref_events WHERE status = 'conflicted' "
-        ).fetchone()[0]
-
+        rows = conn.execute(
+            "SELECT status, COUNT(*) as cnt FROM alias_backref_events GROUP BY status"
+        ).fetchall()
+        counts = {r['status']: r['cnt'] for r in rows}
+        total_tracked = counts.get('tracking', 0)
+        total_aliased = counts.get('aliased', 0)
+        total_conflicted = counts.get('conflicted', 0)
         # 最近10条已别名化的记录
         recent_rows = conn.execute(
             "SELECT source_keyword, target_seed, back_ref_rate, total_count, updated_at "

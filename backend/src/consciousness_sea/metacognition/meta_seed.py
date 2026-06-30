@@ -424,6 +424,8 @@ class MetaSeedManager:
         self,
         category: MetaSeedCategory | None = None,
         status: MetaSeedStatus | None = None,
+        limit: int = 100,
+        offset: int = 0,
     ) -> list[MetaSeedData]:
         """查询元种子列表
 
@@ -453,8 +455,8 @@ class MetaSeedManager:
 
         try:
             rows = self._graph.conn.execute(
-                f"SELECT * FROM meta_seeds {where_clause} ORDER BY label",
-                params,
+                f"SELECT * FROM meta_seeds {where_clause} ORDER BY label LIMIT ? OFFSET ?",
+                params + [limit, offset],
             ).fetchall()
         except Exception as e:
             log.warning("元种子列表查询失败: %s", e)

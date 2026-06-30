@@ -18,6 +18,9 @@ _root = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_root))
 sys.path.insert(0, str(_root / "backend" / "src"))
 
+from consciousness_sea.infrastructure.config import validate_config
+validate_config()
+
 from consciousness_sea.expert.expert_manager import ExpertStatus, InferenceResult
 from consciousness_sea.domain.graph_db import GraphDB
 from consciousness_sea.domain.router import RippleResult, ActivationNode

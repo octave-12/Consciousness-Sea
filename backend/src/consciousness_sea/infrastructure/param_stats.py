@@ -59,7 +59,7 @@ def ensure_param_stats_table(graph: GraphDB) -> None:
             graph.ensure_phase2_tables()
             return
         except Exception:
-            log.debug("ensure_phase2_tables() 调用失败，回退到自行创建 param_stats 表")
+            log.warning("ensure_phase2_tables() 调用失败，回退到自行创建 param_stats 表")
 
     # 自行创建表和索引
     graph.conn.execute(_CREATE_PARAM_STATS_TABLE)

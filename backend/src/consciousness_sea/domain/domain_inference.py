@@ -598,11 +598,11 @@ def infer_domains(
 
     # 连接数据库
     conn = sqlite3.connect(str(db_path))
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA synchronous=NORMAL")
-    conn.execute("PRAGMA cache_size=-2000000")  # 2GB 缓存
 
     try:
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA synchronous=NORMAL")
+        conn.execute("PRAGMA cache_size=-2000000")  # 2GB 缓存
         # ── 步骤 1: 预加载 IS_A 边 ──────────────────────────
         log.info("预加载 IS_A 边到内存...")
         isa_map = _load_isa_map(conn)

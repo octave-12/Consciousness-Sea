@@ -223,11 +223,6 @@ class GuardianLoop:
         if not META_SEED_ENABLED:
             return GuardianLoopResult(success=True, meta_seeds_updated=0)
 
-        if self._is_executing:
-            return GuardianLoopResult(
-                success=False, error="guardian loop already executing"
-            )
-
         start_time = time.monotonic()
         meta_seeds_updated = 0
         meta_karma_edges_created = 0
@@ -237,8 +232,13 @@ class GuardianLoop:
         curiosity_new_associations = 0
 
         with self._loop_lock:
+            if self._is_executing:
+                return GuardianLoopResult(
+                    success=False, error="guardian loop already executing"
+                )
             self._is_executing = True
             try:
+                self._graph.conn.execute("BEGIN IMMEDIATE")
                 # ① 检查新增领域/关系类型
                 new_domain_seeds = self._meta_seed_mgr.generate_domain_monitors()
                 new_relation_seeds = self._meta_seed_mgr.generate_relation_monitors()

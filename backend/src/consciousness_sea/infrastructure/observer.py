@@ -12,7 +12,12 @@ import logging
 import sqlite3
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, TypedDict
+
+from .connection_pool import ConnectionPool
+
+if TYPE_CHECKING:
+    from consciousness_sea.domain.graph_db import GraphDB
 
 from .config import (
     DEFAULT_DB_PATH,
@@ -67,6 +72,53 @@ class QueryRecord:
     confidence: float
 
 
+class DistillationPoolStatus(TypedDict, total=False):
+    total_candidates: int
+    upgraded_count: int
+    pending_count: int
+    cooled_count: int
+
+class AliasExpansionStatus(TypedDict, total=False):
+    total_aliases: int
+    by_domain: dict[str, int]
+
+class CandidateSeedsStatus(TypedDict, total=False):
+    total_candidates: int
+    by_status: dict[str, int]
+
+class LatestCheckpointStatus(TypedDict, total=False):
+    checkpoint_id: str
+    tag: str
+    edge_count: int
+    created_at: str
+    source: str
+
+class MetaSeedsStatus(TypedDict, total=False):
+    total_meta_seeds: int
+    by_category: dict[str, int]
+
+class GuardianLoopStatus(TypedDict, total=False):
+    running: bool
+    last_cycle_time: str
+
+class CognitiveGoalsStatus(TypedDict, total=False):
+    total_goals: int
+    by_status: dict[str, int]
+    by_type: dict[str, int]
+    pool_usage_percent: float
+
+class CuriosityEngineStatus(TypedDict, total=False):
+    total_explorations: int
+    total_new_associations: int
+    total_external_queries: int
+    last_exploration_time: str
+    is_exploring: bool
+
+class PerceptionStatus(TypedDict, total=False):
+    enabled: bool
+    total_perceptual_seeds: int
+    total_hebbian_bindings: int
+
 @dataclass
 class StatusData:
     """系统完整监控状态"""
@@ -80,15 +132,15 @@ class StatusData:
     alerts: list[str]
     domain_distribution: dict[str, int] = field(default_factory=dict)
     db_size_mb: float = 0.0
-    distillation_pool: dict | None = None  # Phase 2: 提炼池状态
-    alias_expansion: dict | None = None  # Phase 3: 别名扩展状态
-    candidate_seeds: dict | None = None  # Phase 3: 候选种子状态
-    latest_checkpoint: dict | None = None  # Phase 3: 最新检查点
-    meta_seeds: dict | None = None  # Phase 4: 元种子状态
-    guardian_loop: dict | None = None  # Phase 4: 守护循环状态
-    cognitive_goals: dict | None = None  # Phase 5: 认知目标状态
-    curiosity_engine: dict | None = None  # Phase 5: 好奇心引擎状态
-    perception: dict | None = None  # Phase 6: 感知状态
+    distillation_pool: DistillationPoolStatus | None = None
+    alias_expansion: AliasExpansionStatus | None = None
+    candidate_seeds: CandidateSeedsStatus | None = None
+    latest_checkpoint: LatestCheckpointStatus | None = None
+    meta_seeds: MetaSeedsStatus | None = None
+    guardian_loop: GuardianLoopStatus | None = None
+    cognitive_goals: CognitiveGoalsStatus | None = None
+    curiosity_engine: CuriosityEngineStatus | None = None
+    perception: PerceptionStatus | None = None
 
 
 # ═══════════════════════════════════════════════════════════
@@ -99,7 +151,7 @@ class StatusData:
 class Observer:
     """系统可观测性 — 统计查询 + 告警检测 + HTML 渲染"""
 
-    def __init__(self, pool: Any) -> None:
+    def __init__(self, pool: ConnectionPool) -> None:
         """
         初始化 Observer。
 
@@ -354,16 +406,13 @@ class Observer:
         graph = None
         try:
             graph = self._pool.acquire()
-
-            # 种子总数
-            total_seeds = graph.conn.execute(
-                "SELECT COUNT(*) FROM seeds"
-            ).fetchone()[0]
-
-            # 业力边总数
-            total_karma_edges = graph.conn.execute(
-                "SELECT COUNT(*) FROM karma_edges"
-            ).fetchone()[0]
+            # 合并 COUNT 查询：种子总数 + 业力边总数
+            count_row = graph.conn.execute(
+                "SELECT (SELECT COUNT(*) FROM seeds) AS total_seeds, "
+                "(SELECT COUNT(*) FROM karma_edges) AS total_karma_edges"
+            ).fetchone()
+            total_seeds = count_row["total_seeds"]
+            total_karma_edges = count_row["total_karma_edges"]
 
             # 领域分布
             domain_distribution: dict[str, int] = {}
@@ -378,69 +427,45 @@ class Observer:
             db_path = Path(DEFAULT_DB_PATH)
             db_size_mb = db_path.stat().st_size / (1024**2) if db_path.exists() else 0.0
 
-        except Exception as e:
-            log.error("获取基础统计失败: %s", e)
-            total_seeds = 0
-            total_karma_edges = 0
-            domain_distribution = {}
-            db_size_mb = 0.0
-        finally:
-            if graph is not None:
-                self._pool.release(graph)
+            # 聚合各维度统计（每个方法内部独立获取/归还连接）
+            hottest_seeds = self.get_hottest_seeds()
+            coldest_seeds = self.get_coldest_seeds()
+            heaviest_karma = self.get_heaviest_karma()
+            recent_queries = self.get_recent_queries()
+            alerts = self.detect_alerts()
 
-        # 聚合各维度统计（每个方法内部独立获取/归还连接）
-        hottest_seeds = self.get_hottest_seeds()
-        coldest_seeds = self.get_coldest_seeds()
-        heaviest_karma = self.get_heaviest_karma()
-        recent_queries = self.get_recent_queries()
-        alerts = self.detect_alerts()
-
-        # Phase 2: 提炼池状态
-        distillation_pool_status = None
-        try:
-            graph2 = self._pool.acquire()
+            # Phase 2: 提炼池状态
+            distillation_pool_status = None
             try:
                 from consciousness_sea.learning.distillation_pool import DistillationPool
-                distill = DistillationPool(graph2)
+                distill = DistillationPool(graph)
                 distillation_pool_status = distill.get_status()
-            finally:
-                self._pool.release(graph2)
-        except Exception as e:
-            log.warning("获取提炼池状态失败: %s", e)
+            except Exception as e:
+                log.warning("获取提炼池状态失败: %s", e)
 
-        # Phase 3: 别名扩展状态
-        alias_expansion_status = None
-        try:
-            graph3 = self._pool.acquire()
+            # Phase 3: 别名扩展状态
+            alias_expansion_status = None
             try:
                 from consciousness_sea.learning.alias_expander import AliasExpander
-                expander = AliasExpander(graph3)
+                expander = AliasExpander(graph)
                 alias_expansion_status = expander.get_alias_stats()
-            finally:
-                self._pool.release(graph3)
-        except Exception as e:
-            log.warning("获取别名扩展状态失败: %s", e)
+            except Exception as e:
+                log.warning("获取别名扩展状态失败: %s", e)
 
-        # Phase 3: 候选种子状态
-        candidate_seeds_status = None
-        try:
-            graph4 = self._pool.acquire()
+            # Phase 3: 候选种子状态
+            candidate_seeds_status = None
             try:
                 from consciousness_sea.learning.seed_candidate import SeedCandidateManager
-                manager = SeedCandidateManager(graph4)
+                manager = SeedCandidateManager(graph)
                 candidate_seeds_status = manager.get_status()
-            finally:
-                self._pool.release(graph4)
-        except Exception as e:
-            log.warning("获取候选种子状态失败: %s", e)
+            except Exception as e:
+                log.warning("获取候选种子状态失败: %s", e)
 
-        # Phase 3: 最新检查点
-        latest_checkpoint_status = None
-        try:
-            graph5 = self._pool.acquire()
+            # Phase 3: 最新检查点
+            latest_checkpoint_status = None
             try:
                 from consciousness_sea.learning.checkpoint import CheckpointManager
-                cp_manager = CheckpointManager(graph5)
+                cp_manager = CheckpointManager(graph)
                 checkpoints = cp_manager.list_checkpoints(limit=1)
                 if checkpoints:
                     cp = checkpoints[0]
@@ -451,20 +476,16 @@ class Observer:
                         "created_at": cp.created_at,
                         "source": cp.source.value if hasattr(cp.source, 'value') else cp.source,
                     }
-            finally:
-                self._pool.release(graph5)
-        except Exception as e:
-            log.warning("获取最新检查点失败: %s", e)
+            except Exception as e:
+                log.warning("获取最新检查点失败: %s", e)
 
-        # Phase 4: 元种子状态
-        meta_seeds_status = None
-        guardian_loop_status = None
-        if META_SEED_ENABLED:
-            try:
-                graph6 = self._pool.acquire()
+            # Phase 4: 元种子状态
+            meta_seeds_status = None
+            guardian_loop_status = None
+            if META_SEED_ENABLED:
                 try:
                     from consciousness_sea.metacognition.meta_seed import MetaSeedManager, MetaSeedCategory
-                    mgr = MetaSeedManager(graph6)
+                    mgr = MetaSeedManager(graph)
                     all_seeds = mgr.list_meta_seeds()
                     by_category: dict[str, int] = {}
                     for cat in MetaSeedCategory:
@@ -475,26 +496,22 @@ class Observer:
                         "total_meta_seeds": len(all_seeds),
                         "by_category": by_category,
                     }
-                finally:
-                    self._pool.release(graph6)
-            except Exception as e:
-                log.warning("获取元种子状态失败: %s", e)
+                except Exception as e:
+                    log.warning("获取元种子状态失败: %s", e)
 
-            try:
-                # 守护循环状态需要从 api.py 的全局实例获取
-                # 这里先返回 None，由 api.py 的 _status_to_dict 补充
-                pass
-            except Exception as e:
-                log.warning("获取守护循环状态失败: %s", e)
+                try:
+                    # 守护循环状态需要从 api.py 的全局实例获取
+                    # 这里先返回 None，由 api.py 的 _status_to_dict 补充
+                    pass
+                except Exception as e:
+                    log.warning("获取守护循环状态失败: %s", e)
 
-        # Phase 5: 认知目标状态
-        cognitive_goals_status = None
-        if COGNITIVE_GOAL_ENABLED:
-            try:
-                graph7 = self._pool.acquire()
+            # Phase 5: 认知目标状态
+            cognitive_goals_status = None
+            if COGNITIVE_GOAL_ENABLED:
                 try:
                     from consciousness_sea.metacognition.cognitive_goal import CognitiveGoalManager
-                    goal_mgr = CognitiveGoalManager(graph7)
+                    goal_mgr = CognitiveGoalManager(graph)
                     stats = goal_mgr.get_goal_stats()
                     cognitive_goals_status = {
                         "total_goals": sum(stats.get("by_status", {}).values()),
@@ -502,21 +519,17 @@ class Observer:
                         "by_type": stats.get("by_type", {}),
                         "pool_usage_percent": stats.get("pool_usage", {}).get("usage_percent", 0.0),
                     }
-                finally:
-                    self._pool.release(graph7)
-            except Exception as e:
-                log.warning("获取认知目标状态失败: %s", e)
+                except Exception as e:
+                    log.warning("获取认知目标状态失败: %s", e)
 
-        # Phase 5: 好奇心引擎状态
-        curiosity_engine_status = None
-        if CURIOSITY_ENGINE_ENABLED:
-            try:
-                graph8 = self._pool.acquire()
+            # Phase 5: 好奇心引擎状态
+            curiosity_engine_status = None
+            if CURIOSITY_ENGINE_ENABLED:
                 try:
                     from consciousness_sea.metacognition.curiosity_engine import CuriosityEngine
                     from consciousness_sea.metacognition.cognitive_goal import CognitiveGoalManager
-                    goal_mgr = CognitiveGoalManager(graph8)
-                    engine = CuriosityEngine(graph8, goal_mgr)
+                    goal_mgr = CognitiveGoalManager(graph)
+                    engine = CuriosityEngine(graph, goal_mgr)
                     status = engine.get_status()
                     curiosity_engine_status = {
                         "total_explorations": status.total_explorations,
@@ -525,46 +538,63 @@ class Observer:
                         "last_exploration_time": status.last_exploration_time,
                         "is_exploring": status.is_exploring,
                     }
-                finally:
-                    self._pool.release(graph8)
-            except Exception as e:
-                log.warning("获取好奇心引擎状态失败: %s", e)
+                except Exception as e:
+                    log.warning("获取好奇心引擎状态失败: %s", e)
 
-        # Phase 6: 感知状态
-        perception_status = None
-        if PERCEPTION_ENABLED:
-            try:
-                graph9 = self._pool.acquire()
+            # Phase 6: 感知状态
+            perception_status = None
+            if PERCEPTION_ENABLED:
                 try:
                     # 感知元种子总数
                     total_perceptual_seeds = 0
                     try:
-                        ps_row = graph9.conn.execute(
+                        ps_row = graph.conn.execute(
                             "SELECT COUNT(*) as cnt FROM perceptual_seeds WHERE status = 'active'"
                         ).fetchone()
                         total_perceptual_seeds = ps_row["cnt"] if ps_row else 0
-                    except Exception:
-                        pass
+                    except Exception as _e:
+                        log.debug("perceptual_seeds count failed", _e)
 
                     # Hebbian 绑定边总数
                     total_hebbian_bindings = 0
                     try:
-                        hb_row = graph9.conn.execute(
+                        hb_row = graph.conn.execute(
                             "SELECT COUNT(*) as cnt FROM karma_edges WHERE source_tag = 'hebbian_binding'"
                         ).fetchone()
                         total_hebbian_bindings = hb_row["cnt"] if hb_row else 0
-                    except Exception:
-                        pass
+                    except Exception as _e:
+                        log.debug("hebbian bindings count failed", _e)
 
                     perception_status = {
                         "enabled": True,
                         "total_perceptual_seeds": total_perceptual_seeds,
                         "total_hebbian_bindings": total_hebbian_bindings,
                     }
-                finally:
-                    self._pool.release(graph9)
-            except Exception as e:
-                log.warning("获取感知状态失败: %s", e)
+                except Exception as e:
+                    log.warning("获取感知状态失败: %s", e)
+        except Exception as e:
+            log.error("获取监控状态失败: %s", e)
+            total_seeds = 0
+            total_karma_edges = 0
+            domain_distribution = {}
+            db_size_mb = 0.0
+            hottest_seeds = []
+            coldest_seeds = []
+            heaviest_karma = []
+            recent_queries = []
+            alerts = []
+            distillation_pool_status = None
+            alias_expansion_status = None
+            candidate_seeds_status = None
+            latest_checkpoint_status = None
+            meta_seeds_status = None
+            guardian_loop_status = None
+            cognitive_goals_status = None
+            curiosity_engine_status = None
+            perception_status = None
+        finally:
+            if graph is not None:
+                self._pool.release(graph)
 
         return StatusData(
             total_seeds=total_seeds,

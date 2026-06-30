@@ -474,32 +474,33 @@ class ExpertManager:
             self._unavailable_reason = None
             self._active_backend = None
 
-        # 在锁外释放 GPU 资源（避免持锁时间过长）
-        if lora_model is not None:
-            try:
-                del lora_model
-            except Exception:
-                pass
+        with self._inference_lock:
+            # 同时持有 _inference_lock 防止推理期间释放资源
+            if lora_model is not None:
+                try:
+                    del lora_model
+                except Exception:
+                    pass
 
-        if base_model is not None:
-            try:
-                del base_model
-            except Exception:
-                pass
+            if base_model is not None:
+                try:
+                    del base_model
+                except Exception:
+                    pass
 
-        if tokenizer is not None:
-            try:
-                del tokenizer
-            except Exception:
-                pass
+            if tokenizer is not None:
+                try:
+                    del tokenizer
+                except Exception:
+                    pass
 
-        # 释放 GPU 显存
-        if _TORCH_AVAILABLE and torch is not None:
-            try:
-                torch.cuda.empty_cache()
-                log.info("基座模型已卸载，VRAM 已释放")
-            except (RuntimeError, OSError) as e:
-                log.warning("释放 VRAM 时异常: %s", e)
+            # 释放 GPU 显存
+            if _TORCH_AVAILABLE and torch is not None:
+                try:
+                    torch.cuda.empty_cache()
+                    log.info("基座模型已卸载，VRAM 已释放")
+                except (RuntimeError, OSError) as e:
+                    log.warning("释放 VRAM 时异常: %s", e)
 
     # ══════════════════════════════════════════════════════════
     #  LoRA 热切换 (T-005)

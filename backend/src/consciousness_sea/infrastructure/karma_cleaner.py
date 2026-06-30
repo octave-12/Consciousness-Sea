@@ -141,3 +141,4 @@ class KarmaCleaner:
                 )
         except Exception as e:
             log.warning("提炼池冷却退回失败: %s", e)
+            raise

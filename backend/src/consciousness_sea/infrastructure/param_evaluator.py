@@ -269,7 +269,7 @@ class ParamEvaluator:
             ensure_param_stats_table(graph)
 
             rows = graph.conn.execute(
-                "SELECT * FROM param_stats ORDER BY created_at DESC"
+                "SELECT * FROM param_stats ORDER BY created_at DESC LIMIT 1000"
             ).fetchall()
             result = [dict(r) for r in rows]
 

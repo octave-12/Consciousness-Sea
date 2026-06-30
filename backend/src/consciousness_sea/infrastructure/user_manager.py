@@ -45,15 +45,17 @@ class UserManager:
         self._pool = pool
         self._mapping_cache: dict[tuple[str, str], str] = {}  # (source, source_id) → user_id
         self._cache_lock = threading.Lock()
-        self._table_ensured = False  # M-5: 首次执行后跳过建表
+        self._table_ensured = False
+        self._table_ensured_lock = threading.Lock()  # 首次执行后跳过建表
 
     def _ensure_user_mapping_table(self) -> None:
         """自动创建 user_mapping 表（含联合主键 + user_id 索引）
 
         M-5: 首次执行后设置 _table_ensured 标志，后续调用直接跳过。
         """
-        if self._table_ensured:
-            return
+        with self._table_ensured_lock:
+            if self._table_ensured:
+                return
 
         graph = self._pool.acquire()
         try:
@@ -71,7 +73,8 @@ class UserManager:
                 ON user_mapping (user_id)
             """)
             graph.conn.commit()
-            self._table_ensured = True
+            with self._table_ensured_lock:
+                self._table_ensured = True
         finally:
             self._pool.release(graph)
 
@@ -112,7 +115,7 @@ class UserManager:
                 return user_id
         except Exception as e:
             log.warning("查询用户映射失败: %s", e)
-            return None
+            raise RuntimeError(f"查询用户映射失败: {e}") from e
         finally:
             self._pool.release(graph)
 

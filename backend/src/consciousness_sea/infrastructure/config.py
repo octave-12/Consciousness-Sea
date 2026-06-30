@@ -10,6 +10,47 @@ from __future__ import annotations
 import os
 import pathlib
 
+# ── 路径配置 ───────────────────────────────────────────────
+DEFAULT_DATA_DIR = "data"                  # 默认数据目录（相对于项目根目录）
+
+
+def resolve_data_dir(cli_data_dir: str | None = None) -> pathlib.Path:
+    """
+    解析数据目录路径。
+
+    优先级：
+      1. 命令行参数 --data-dir 传入的路径
+      2. 环境变量 CONSCIOUSNESS_SEA_DATA_DIR
+      3. 包根目录下的 data/ 目录（基于 consciousness_sea 包位置推断）
+      4. 当前工作目录下的 data/ 目录
+
+    Args:
+        cli_data_dir: 命令行传入的数据目录路径，可选。
+
+    Returns:
+        pathlib.Path: 解析后的数据目录绝对路径。
+    """
+    if cli_data_dir is not None:
+        return pathlib.Path(cli_data_dir).resolve()
+
+    env_dir = os.environ.get("CONSCIOUSNESS_SEA_DATA_DIR")
+    if env_dir:
+        return pathlib.Path(env_dir).resolve()
+
+    try:
+        package_dir = pathlib.Path(__file__).resolve().parent.parent
+        candidate = package_dir / DEFAULT_DATA_DIR
+        if candidate.is_dir():
+            return candidate
+    except Exception:
+        pass
+
+    return pathlib.Path.cwd() / DEFAULT_DATA_DIR
+
+
+# ── 数据库 ─────────────────────────────────────────────────
+DEFAULT_DB_PATH = str(resolve_data_dir() / 'consciousness_sea.db')
+
 # ── 涟漪传播 ──────────────────────────────────────────────
 RIPPLE_DEPTH = 2           # BFS 最大深度
 RIPPLE_DECAY = 0.7         # 每跳衰减系数
@@ -20,9 +61,6 @@ MAX_ACTIVATION = 2.0       # 单节点激活值上限（防止多路径叠加爆
 DOMAIN_THRESHOLD = 0.3     # 领域激活值低于此阈值的不考虑
 TOP_K_SEEDS = 20           # 选取激活值最高的 K 个种子进入回答
 TOP_K_PATHS = 10           # 选取最多 K 条路径展示
-
-# ── 文本匹配 ───────────────────────────────────────────────
-# ENABLE_FUZZY 和 FUZZY_EDIT_DISTANCE 已移至 Phase 1 配置段（当前阶段已启用模糊匹配）
 
 # ── 校验器 ─────────────────────────────────────────────────
 CONFIDENCE_HIGH = 0.7      # 高于此值 → 正向熏习
@@ -60,9 +98,6 @@ RELATION_NAMES = {
     'SYNONYM': '别名',
 }
 
-# ── 数据库 ─────────────────────────────────────────────────
-DEFAULT_DB_PATH = 'data/consciousness_sea.db'
-
 # ── 用户种子 ───────────────────────────────────────────────
 DEFAULT_USER_SEED = 'user_default'
 USER_PREACTIVATION = 0.5   # 用户种子的固定预激活值
@@ -76,6 +111,16 @@ API_HOST = "127.0.0.1"     # API 监听地址（仅本地访问）
 API_PORT = 8111            # API 监听端口
 API_WORKERS = 1            # Uvicorn worker 数量
 API_TIMEOUT = 5.0          # 请求超时时间（秒）
+
+# ── API 认证配置 ─────────────────────────────────────────
+API_AUTH_ENABLED: bool = False  # API Key 认证开关（默认关闭，向后兼容）
+API_KEY: str = ""               # API Key 值（启用认证时必须配置）
+
+# ── CORS 配置 ─────────────────────────────────────────────
+CORS_ALLOWED_ORIGINS: list[str] = ["http://localhost:3000", "http://localhost:5173"]  # 默认开发环境
+_cors_env = os.environ.get("CORS_ALLOWED_ORIGINS")
+if _cors_env:
+    CORS_ALLOWED_ORIGINS = [o.strip() for o in _cors_env.split(",") if o.strip()]
 
 # ── 分词器配置 ─────────────────────────────────────────────
 MAX_COMPOUND_LEN = 8       # 组合词最大匹配长度（字符数）
@@ -100,8 +145,6 @@ ISA_MAX_COUNT = 1_500_000      # IS_A 边最大保留数量
 DOMAIN_COVERAGE_TARGET = 0.95  # 领域覆盖率目标（95%）
 REPAIR_BATCH_SIZE = 50000      # 修复脚本批量处理大小
 
-# ── 路径配置 ───────────────────────────────────────────────
-DEFAULT_DATA_DIR = "data"                  # 默认数据目录（相对于项目根目录）
 CG_DB_FILENAME = "concept_graph.db"        # 龙珠概念图数据库文件名
 CEDICT_FILENAME = "cedict_parsed.json"     # CC-CEDICT 解析后 JSON 文件名
 ZHWIKI_FILENAME = "zhwiki.db"              # Wikipedia 中文数据库文件名
@@ -166,7 +209,7 @@ EXPERT_INFERENCE_TIMEOUT: float = 10.0  # 推理超时(秒)
 EXPERT_MAX_NEW_TOKENS: int = 512  # 最大生成token数
 
 # ── Ollama 后端配置 ─────────────────────────────────────
-OLLAMA_BASE_URL: str = "http://localhost:11434"  # Ollama API 地址
+OLLAMA_BASE_URL: str = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")  # Ollama API 地址
 OLLAMA_MODEL: str = "deepseek-r1-7b"             # Ollama 模型名
 OLLAMA_TIMEOUT: float = 60.0                      # Ollama 请求超时（秒）
 OLLAMA_ENABLED: bool = False                       # 是否启用 Ollama 后端
@@ -367,43 +410,64 @@ def _validate_phase5_config() -> None:
     for error in errors:
         _log.error("Phase 5 配置校验失败: %s", error)
 
+    if errors:
+        raise ValueError("Phase 5 配置校验失败: " + ", ".join(errors))
 
-# 模块加载时执行校验
-_validate_phase5_config()
+
+def _validate_all_config() -> None:
+    errors: list[str] = []
+
+    if CONNECTION_POOL_SIZE <= 0:
+        errors.append(f"CONNECTION_POOL_SIZE={CONNECTION_POOL_SIZE} <= 0")
+    if CONNECTION_POOL_TIMEOUT <= 0:
+        errors.append(f"CONNECTION_POOL_TIMEOUT={CONNECTION_POOL_TIMEOUT} <= 0")
+    if DISTILLATION_THRESHOLD <= 0:
+        errors.append(f"DISTILLATION_THRESHOLD={DISTILLATION_THRESHOLD} <= 0")
+    if DISTILLATION_INITIAL_WEIGHT <= 0 or DISTILLATION_INITIAL_WEIGHT > 1:
+        errors.append(f"DISTILLATION_INITIAL_WEIGHT={DISTILLATION_INITIAL_WEIGHT} not in (0, 1]")
+    if GLOBAL_WEIGHT_RATIO < 0 or GLOBAL_WEIGHT_RATIO > 1:
+        errors.append(f"GLOBAL_WEIGHT_RATIO={GLOBAL_WEIGHT_RATIO} not in [0, 1]")
+    if PERSONAL_WEIGHT_RATIO < 0 or PERSONAL_WEIGHT_RATIO > 1:
+        errors.append(f"PERSONAL_WEIGHT_RATIO={PERSONAL_WEIGHT_RATIO} not in [0, 1]")
+    if abs(GLOBAL_WEIGHT_RATIO + PERSONAL_WEIGHT_RATIO - 1.0) > 0.01:
+        errors.append(f"GLOBAL_WEIGHT_RATIO({GLOBAL_WEIGHT_RATIO}) + PERSONAL_WEIGHT_RATIO({PERSONAL_WEIGHT_RATIO}) != 1.0")
+    if KARMA_ALERT_THRESHOLD <= 0:
+        errors.append(f"KARMA_ALERT_THRESHOLD={KARMA_ALERT_THRESHOLD} <= 0")
+    if ALIAS_BACK_REF_THRESHOLD <= 0 or ALIAS_BACK_REF_THRESHOLD > 1:
+        errors.append(f"ALIAS_BACK_REF_THRESHOLD={ALIAS_BACK_REF_THRESHOLD} not in (0, 1]")
+    if CANDIDATE_SEED_MIN_COUNT <= 0:
+        errors.append(f"CANDIDATE_SEED_MIN_COUNT={CANDIDATE_SEED_MIN_COUNT} <= 0")
+    if CANDIDATE_SEED_PROMOTE_COUNT < CANDIDATE_SEED_MIN_COUNT:
+        errors.append(f"CANDIDATE_SEED_PROMOTE_COUNT({CANDIDATE_SEED_PROMOTE_COUNT}) < CANDIDATE_SEED_MIN_COUNT({CANDIDATE_SEED_MIN_COUNT})")
+    if CHECKPOINT_RETAIN_COUNT <= 0:
+        errors.append(f"CHECKPOINT_RETAIN_COUNT={CHECKPOINT_RETAIN_COUNT} <= 0")
+    if GUARDIAN_LOOP_INTERVAL <= 0:
+        errors.append(f"GUARDIAN_LOOP_INTERVAL={GUARDIAN_LOOP_INTERVAL} <= 0")
+    if GUARDIAN_LOOP_TIMEOUT < GUARDIAN_LOOP_INTERVAL:
+        errors.append(f"GUARDIAN_LOOP_TIMEOUT({GUARDIAN_LOOP_TIMEOUT}) < GUARDIAN_LOOP_INTERVAL({GUARDIAN_LOOP_INTERVAL})")
+    if GOAL_POOL_MAX_SIZE <= 0:
+        errors.append(f"GOAL_POOL_MAX_SIZE={GOAL_POOL_MAX_SIZE} <= 0")
+    if GOAL_DECAY_FACTOR <= 0 or GOAL_DECAY_FACTOR >= 1:
+        errors.append(f"GOAL_DECAY_FACTOR={GOAL_DECAY_FACTOR} not in (0, 1)")
+    if HEBBIAN_LEARNING_RATE <= 0 or HEBBIAN_LEARNING_RATE > 1:
+        errors.append(f"HEBBIAN_LEARNING_RATE={HEBBIAN_LEARNING_RATE} not in (0, 1]")
+
+    if errors:
+        raise ValueError("配置校验失败: " + ", ".join(errors))
 
 
-def resolve_data_dir(cli_data_dir: str | None = None) -> pathlib.Path:
+_config_validated = False
+
+
+def validate_config() -> None:
+    """延迟执行配置校验（在应用启动时调用，而非 import 时）
+
+    避免配置错误导致整个模块无法 import，
+    允许应用在启动阶段捕获并优雅处理配置问题。
     """
-    解析数据目录路径。
-
-    优先级：
-      1. 命令行参数 --data-dir 传入的路径
-      2. 环境变量 CONSCIOUSNESS_SEA_DATA_DIR
-      3. 脚本相对的 data/ 目录
-
-    Args:
-        cli_data_dir: 命令行传入的数据目录路径，可选。
-
-    Returns:
-        pathlib.Path: 解析后的数据目录绝对路径。
-    """
-    # 优先级 1: 命令行参数
-    if cli_data_dir is not None:
-        return pathlib.Path(cli_data_dir).resolve()
-
-    # 优先级 2: 环境变量
-    env_dir = os.environ.get("CONSCIOUSNESS_SEA_DATA_DIR")
-    if env_dir:
-        return pathlib.Path(env_dir).resolve()
-
-    # 优先级 3: 脚本相对的 data/ 目录
-    # 使用调用栈找到主脚本位置，若无法确定则回退到当前工作目录
-    import __main__
-
-    main_file = getattr(__main__, "__file__", None)
-    if main_file:
-        project_root = pathlib.Path(main_file).resolve().parent
-    else:
-        project_root = pathlib.Path.cwd()
-
-    return project_root / DEFAULT_DATA_DIR
+    global _config_validated
+    if _config_validated:
+        return
+    _config_validated = True
+    _validate_all_config()
+    _validate_phase5_config()

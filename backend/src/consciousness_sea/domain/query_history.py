@@ -69,9 +69,9 @@ def ensure_history_table(conn: sqlite3.Connection) -> None:
             ON query_history (user_id)
         """)
         conn.commit()
-    except Exception:
-        # 列已存在时忽略
-        pass
+    except sqlite3.OperationalError as e:
+        if "duplicate column name" not in str(e).lower():
+            raise
 
     # 迁移：新增专家相关列（兼容已有数据库）
     for column_def in [
@@ -81,9 +81,9 @@ def ensure_history_table(conn: sqlite3.Connection) -> None:
     ]:
         try:
             conn.execute(f"ALTER TABLE query_history ADD COLUMN {column_def}")
-        except Exception:
-            # 列已存在时忽略
-            pass
+        except sqlite3.OperationalError as e:
+            if "duplicate column name" not in str(e).lower():
+                raise
     conn.commit()
 
 

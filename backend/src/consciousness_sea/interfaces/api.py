@@ -16,13 +16,14 @@ import logging
 import sqlite3
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Literal, Optional
 
 import uvicorn
 from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field
+
 
 from consciousness_sea import (
     GraphDB,
@@ -57,6 +58,7 @@ from consciousness_sea.infrastructure.config import (
     COGNITIVE_GOAL_ENABLED,
     CURIOSITY_ENGINE_ENABLED,
     PERCEPTION_ENABLED,
+    CORS_ALLOWED_ORIGINS,
 )
 from consciousness_sea.infrastructure.param_stats import record_param_stats as _record_param_stats_core
 from consciousness_sea.domain.query_history import record_query, get_history
@@ -64,6 +66,15 @@ from consciousness_sea.infrastructure.connection_pool import ConnectionPool, Con
 from consciousness_sea.infrastructure.user_manager import UserManager
 from consciousness_sea.infrastructure.session_manager import SessionManager, SessionContext
 from consciousness_sea.infrastructure.observer import Observer, StatusData
+from consciousness_sea.infrastructure.auth import verify_api_key
+
+if TYPE_CHECKING:
+    from consciousness_sea.expert.expert_manager import ExpertManager
+    from consciousness_sea.learning.checkpoint import CheckpointManager
+    from consciousness_sea.metacognition.guardian_loop import GuardianLoop
+    from consciousness_sea.metacognition.cognitive_goal import CognitiveGoalManager
+    from consciousness_sea.metacognition.curiosity_engine import CuriosityEngine
+    from consciousness_sea.perception.perception import PerceptionManager
 
 log = logging.getLogger(__name__)
 
@@ -79,14 +90,14 @@ _pool: Optional[ConnectionPool] = None
 _user_manager: Optional[UserManager] = None
 _session_manager: Optional[SessionManager] = None
 _observer: Optional[Observer] = None
-_expert_manager: Optional[object] = None  # ExpertManager 单例
-_checkpoint_manager: Optional[object] = None  # CheckpointManager 单例（Phase 3）
+_expert_manager: Optional[ExpertManager] = None
+_checkpoint_manager: Optional[CheckpointManager] = None
 _checkpoint_graph: Optional[GraphDB] = None  # CheckpointManager 专用独立连接
-_guardian_loop: Optional[object] = None  # GuardianLoop 单例（Phase 4）
+_guardian_loop: Optional[GuardianLoop] = None
 _guardian_graph: Optional[GraphDB] = None  # GuardianLoop 专用独立连接
-_goal_mgr: Optional[object] = None  # CognitiveGoalManager 单例（Phase 5）
-_curiosity_engine: Optional[object] = None  # CuriosityEngine 单例（Phase 5）
-_perception_manager: Optional[object] = None  # PerceptionManager 单例（Phase 6）
+_goal_mgr: Optional[CognitiveGoalManager] = None
+_curiosity_engine: Optional[CuriosityEngine] = None
+_perception_manager: Optional[PerceptionManager] = None
 _perception_graph: Optional[GraphDB] = None  # PerceptionManager 专用独立连接
 
 
@@ -96,6 +107,8 @@ async def lifespan(app: FastAPI):
     global _pool, _user_manager, _session_manager, _observer, _expert_manager, _checkpoint_manager, _checkpoint_graph, _guardian_loop, _guardian_graph, _goal_mgr, _curiosity_engine, _perception_manager, _perception_graph
 
     # ── Startup ──
+    from consciousness_sea.infrastructure.config import validate_config
+    validate_config()
     _pool = ConnectionPool(DEFAULT_DB_PATH)
     _user_manager = UserManager(_pool)
     _session_manager = SessionManager(_pool)
@@ -242,17 +255,32 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="识海 API", version="0.1.0", lifespan=lifespan)
 
-# CORS: 仅允许 http://localhost:*
-app.add_middleware(
-    CORSMiddleware,
-    allow_origin_regex=r"http://localhost:\d+",
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+_cors_origins = CORS_ALLOWED_ORIGINS
+_has_regex = any("*" in o for o in _cors_origins)
+if _has_regex:
+    import re
+    _regex_parts = [re.escape(o).replace(r"\*", r"\d+") for o in _cors_origins if "*" in o]
+    _plain_origins = [o for o in _cors_origins if "*" not in o]
+    _combined_regex = "|".join(_regex_parts) if _regex_parts else None
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origin_regex=_combined_regex,
+        allow_origins=_plain_origins if _plain_origins else [],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+else:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=_cors_origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
 
-def _create_expert_manager() -> Optional[object]:
+def _create_expert_manager() -> Optional[ExpertManager]:
     """工厂函数：从配置创建 ExpertManager 实例
 
     读取 config.py 中的专家模型配置，创建 ExpertManager。
@@ -405,6 +433,21 @@ class CreateCognitiveGoalRequest(BaseModel):
     trigger_condition: str = Field("manual", max_length=500, description="触发条件")
 
 
+class RollbackRequest(BaseModel):
+    """回滚请求"""
+
+    checkpoint_id: str = Field(..., min_length=1, max_length=100)
+    mode: Literal["full", "single"] = Field("full")
+    edges: Optional[list[dict]] = Field(None, max_length=1000)
+
+
+def _error_response(status_code: int, error: str, message: str) -> JSONResponse:
+    return JSONResponse(
+        status_code=status_code,
+        content={"error": error, "message": message},
+    )
+
+
 # ═══════════════════════════════════════════════════════════
 #  依赖注入
 # ═══════════════════════════════════════════════════════════
@@ -413,28 +456,28 @@ class CreateCognitiveGoalRequest(BaseModel):
 def get_pool() -> ConnectionPool:
     """获取连接池实例"""
     if _pool is None:
-        raise HTTPException(status_code=503, detail="连接池未初始化")
+        raise HTTPException(status_code=503, detail={"error": "service_unavailable", "message": "连接池未初始化"})
     return _pool
 
 
 def get_session_manager() -> SessionManager:
     """获取 Session 管理器实例"""
     if _session_manager is None:
-        raise HTTPException(status_code=503, detail="Session 管理器未初始化")
+        raise HTTPException(status_code=503, detail={"error": "service_unavailable", "message": "Session 管理器未初始化"})
     return _session_manager
 
 
 def get_user_manager() -> UserManager:
     """获取用户管理器实例"""
     if _user_manager is None:
-        raise HTTPException(status_code=503, detail="用户管理器未初始化")
+        raise HTTPException(status_code=503, detail={"error": "service_unavailable", "message": "用户管理器未初始化"})
     return _user_manager
 
 
 def get_observer() -> Observer:
     """获取可观测性实例"""
     if _observer is None:
-        raise HTTPException(status_code=503, detail="可观测性模块未初始化")
+        raise HTTPException(status_code=503, detail={"error": "service_unavailable", "message": "可观测性模块未初始化"})
     return _observer
 
 
@@ -456,18 +499,12 @@ def _validate_source(source: str, source_id: str) -> None:
     if source not in VALID_SOURCES:
         raise HTTPException(
             status_code=422,
-            detail={
-                "error": "validation_error",
-                "message": f"source 必须为 {VALID_SOURCES} 之一",
-            },
+            detail={"error": "validation_error", "message": f"source 必须为 {VALID_SOURCES} 之一"},
         )
     if not source_id or len(source_id) > MAX_SOURCE_ID_LENGTH:
         raise HTTPException(
             status_code=422,
-            detail={
-                "error": "validation_error",
-                "message": "source_id 格式不合法",
-            },
+            detail={"error": "validation_error", "message": "source_id 格式不合法"},
         )
 
 
@@ -510,15 +547,15 @@ def query_endpoint(
     req: QueryRequest,
     session_mgr: SessionManager = Depends(get_session_manager),
     user_mgr: UserManager = Depends(get_user_manager),
+    _auth: None = Depends(verify_api_key),
 ):
     """
     执行一次查询。
 
     流程: resolve_user → create_session → route() → answer() → verify() → apply_karma()
     """
-    # 空查询校验（Pydantic min_length=1 已拦截，这里做防御性检查）
     if not req.query or not req.query.strip():
-        raise HTTPException(status_code=400, detail="query 不能为空")
+        raise HTTPException(status_code=400, detail={"error": "bad_request", "message": "query 不能为空"})
 
     # 解析用户标识
     user_label = _resolve_user_label(req, user_mgr)
@@ -527,7 +564,7 @@ def query_endpoint(
     try:
         ctx = session_mgr.create_session(user_label=user_label)
     except ConnectionPoolExhausted as e:
-        log.error(f"连接池耗尽: {e}")
+        log.error("连接池耗尽: %s", e)
         raise HTTPException(
             status_code=503,
             detail={"error": "service_unavailable", "message": "服务繁忙，请稍后重试"},
@@ -561,10 +598,16 @@ def query_endpoint(
             verify_result=verdict,
         )
         log.info(
-            f"查询完成: query='{req.query}', confidence={verdict['confidence']}, "
-            f"karma_direction={verdict['karma_direction']:+d}, "
-            f"karma_edges={karma_count}, dry_run={req.dry_run}, "
-            f"expert_available={expert_result.get('expert_available', False)}"
+            "查询完成: query='%s', confidence=%s, "
+            "karma_direction=%+d, "
+            "karma_edges=%s, dry_run=%s, "
+            "expert_available=%s",
+            req.query,
+            verdict["confidence"],
+            verdict["karma_direction"],
+            karma_count,
+            req.dry_run,
+            expert_result.get("expert_available", False),
         )
 
         # 5. 记录查询历史（失败不影响响应）
@@ -582,7 +625,7 @@ def query_endpoint(
                 cross_validation_status=expert_result.get('cross_validation_status', 'none'),
             )
         except Exception as e:
-            log.warning(f"记录查询历史失败: {e}")
+            log.warning("记录查询历史失败: %s", e)
 
         # 5.5 记录参数统计（Phase 2，失败不影响响应）
         try:
@@ -593,14 +636,14 @@ def query_endpoint(
                 verdict=verdict,
             )
         except Exception as e:
-            log.warning(f"记录参数统计失败: {e}")
+            log.warning("记录参数统计失败: %s", e)
 
         # 5.6 Phase 3: 冷启动计数递增
         try:
             if user_label:
                 user_mgr.post_query_increment(user_label)
         except Exception as e:
-            log.warning(f"冷启动计数递增失败: {e}")
+            log.warning("冷启动计数递增失败: %s", e)
 
         # 5.7 Phase 3: 获取冷启动因子
         cold_start_factor = None
@@ -609,7 +652,7 @@ def query_endpoint(
             cold_factor = ColdStartManager(graph).get_cold_factor(user_label)
             cold_start_factor = cold_factor if user_label else None
         except Exception as e:
-            log.warning(f"获取冷启动因子失败: {e}")
+            log.warning("获取冷启动因子失败: %s", e)
 
         # 5.8 Phase 6: 转发概念激活事件到 PerceptionManager
         if PERCEPTION_ENABLED and _perception_manager is not None:
@@ -618,7 +661,7 @@ def query_endpoint(
                 if concept_event is not None:
                     _perception_manager.on_concept_activation(concept_event)
             except Exception as e:
-                log.warning(f"概念激活事件转发失败: {e}")
+                log.warning("概念激活事件转发失败: %s", e)
 
         # 6. 组装响应
         activated_seeds = [
@@ -676,19 +719,19 @@ def query_endpoint(
         )
 
     except ConnectionPoolExhausted as e:
-        log.error(f"连接池耗尽: {e}")
+        log.error("连接池耗尽: %s", e)
         raise HTTPException(
             status_code=503,
             detail={"error": "service_unavailable", "message": "服务繁忙，请稍后重试"},
         )
     except sqlite3.OperationalError as e:
-        log.error(f"数据库操作失败: {e}")
+        log.error("数据库操作失败: %s", e)
         raise HTTPException(
             status_code=503,
             detail={"error": "service_unavailable", "message": "数据库暂时不可用"},
         )
     except TimeoutError as e:
-        log.error(f"请求超时: {e}")
+        log.error("请求超时: %s", e)
         raise HTTPException(
             status_code=504,
             detail={"error": "timeout", "message": "请求超时"},
@@ -696,17 +739,20 @@ def query_endpoint(
     except HTTPException:
         raise
     except Exception as e:
-        log.exception(f"查询处理异常: {e}")
+        log.exception("查询处理异常: %s", e)
         raise HTTPException(
             status_code=500,
-            detail={"error": "internal_error", "message": "服务器内部错误，请稍后重试"},
+            detail={"error": "internal_error", "message": "服务器内部错误"},
         )
     finally:
         session_mgr.end_session(ctx)
 
 
 @app.get("/api/v1/stats", response_model=StatsResponse)
-def stats_endpoint(pool: ConnectionPool = Depends(get_pool)):
+def stats_endpoint(
+    pool: ConnectionPool = Depends(get_pool),
+    _auth: None = Depends(verify_api_key),
+):
     """返回数据库统计信息"""
     graph = None
     try:
@@ -744,16 +790,16 @@ def stats_endpoint(pool: ConnectionPool = Depends(get_pool)):
         )
 
     except sqlite3.OperationalError as e:
-        log.error(f"数据库操作失败: {e}")
+        log.error("数据库操作失败: %s", e)
         raise HTTPException(
             status_code=503,
             detail={"error": "service_unavailable", "message": "数据库暂时不可用"},
         )
     except Exception as e:
-        log.exception(f"统计查询异常: {e}")
+        log.exception("统计查询异常: %s", e)
         raise HTTPException(
             status_code=500,
-            detail={"error": "internal_error", "message": "服务器内部错误，请稍后重试"},
+            detail={"error": "internal_error", "message": "服务器内部错误"},
         )
     finally:
         if graph is not None:
@@ -765,6 +811,7 @@ def history_endpoint(
     limit: int = Query(HISTORY_DEFAULT_LIMIT, ge=1, le=HISTORY_MAX_LIMIT, description="返回条数"),
     offset: int = Query(0, ge=0, description="偏移量"),
     pool: ConnectionPool = Depends(get_pool),
+    _auth: None = Depends(verify_api_key),
 ):
     """查询历史记录"""
     # 参数截断：limit 超过最大值时截断
@@ -798,16 +845,16 @@ def history_endpoint(
         )
 
     except sqlite3.OperationalError as e:
-        log.error(f"数据库操作失败: {e}")
+        log.error("数据库操作失败: %s", e)
         raise HTTPException(
             status_code=503,
             detail={"error": "service_unavailable", "message": "数据库暂时不可用"},
         )
     except Exception as e:
-        log.exception(f"查询历史异常: {e}")
+        log.exception("查询历史异常: %s", e)
         raise HTTPException(
             status_code=500,
-            detail={"error": "internal_error", "message": "服务器内部错误，请稍后重试"},
+            detail={"error": "internal_error", "message": "服务器内部错误"},
         )
     finally:
         if graph is not None:
@@ -820,43 +867,51 @@ def history_endpoint(
 
 
 @app.get("/api/v1/aliases")
-async def get_aliases():
+def get_aliases(pool: ConnectionPool = Depends(get_pool), _auth: None = Depends(verify_api_key)):
     """查询别名扩展状态"""
     graph = None
     try:
-        graph = _pool.acquire()
+        graph = pool.acquire()
         from consciousness_sea.learning.alias_expander import AliasExpander
         expander = AliasExpander(graph)
         return expander.get_alias_stats()
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        log.exception("别名查询异常: %s", e)
+        raise HTTPException(
+            status_code=500,
+            detail={"error": "internal_error", "message": "服务器内部错误"},
+        )
     finally:
         if graph is not None:
-            _pool.release(graph)
+            pool.release(graph)
 
 
 @app.get("/api/v1/candidate-seeds")
-async def get_candidate_seeds():
+def get_candidate_seeds(pool: ConnectionPool = Depends(get_pool), _auth: None = Depends(verify_api_key)):
     """查询候选种子状态"""
     graph = None
     try:
-        graph = _pool.acquire()
+        graph = pool.acquire()
         from consciousness_sea.learning.seed_candidate import SeedCandidateManager
         manager = SeedCandidateManager(graph)
         return manager.get_status()
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        log.exception("候选种子查询异常: %s", e)
+        raise HTTPException(
+            status_code=500,
+            detail={"error": "internal_error", "message": "服务器内部错误"},
+        )
     finally:
         if graph is not None:
-            _pool.release(graph)
+            pool.release(graph)
 
 
 @app.post("/api/v1/checkpoint")
-async def create_checkpoint(tag: str = ""):
+def create_checkpoint(tag: str = "", pool: ConnectionPool = Depends(get_pool), _auth: None = Depends(verify_api_key)):
     """创建手动检查点"""
     graph = None
     try:
-        graph = _pool.acquire()
+        graph = pool.acquire()
         from consciousness_sea.learning.checkpoint import CheckpointManager, CheckpointSource
         manager = CheckpointManager(graph)
         meta = manager.create_checkpoint(tag=tag, source=CheckpointSource.MANUAL)
@@ -867,18 +922,22 @@ async def create_checkpoint(tag: str = ""):
             "created_at": meta.created_at,
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        log.exception("创建检查点异常: %s", e)
+        raise HTTPException(
+            status_code=500,
+            detail={"error": "internal_error", "message": "服务器内部错误"},
+        )
     finally:
         if graph is not None:
-            _pool.release(graph)
+            pool.release(graph)
 
 
 @app.get("/api/v1/checkpoints")
-async def list_checkpoints(limit: int = 20):
+def list_checkpoints(limit: int = 20, pool: ConnectionPool = Depends(get_pool), _auth: None = Depends(verify_api_key)):
     """查询检查点列表"""
     graph = None
     try:
-        graph = _pool.acquire()
+        graph = pool.acquire()
         from consciousness_sea.learning.checkpoint import CheckpointManager
         manager = CheckpointManager(graph)
         checkpoints = manager.list_checkpoints(limit=limit)
@@ -893,21 +952,25 @@ async def list_checkpoints(limit: int = 20):
             for cp in checkpoints
         ]
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        log.exception("查询检查点列表异常: %s", e)
+        raise HTTPException(
+            status_code=500,
+            detail={"error": "internal_error", "message": "服务器内部错误"},
+        )
     finally:
         if graph is not None:
-            _pool.release(graph)
+            pool.release(graph)
 
 
 @app.post("/api/v1/rollback")
-async def rollback(checkpoint_id: str, mode: str = "full", edges: list[dict] | None = None):
+def rollback(req: RollbackRequest, pool: ConnectionPool = Depends(get_pool), _auth: None = Depends(verify_api_key)):
     """执行回滚操作"""
     graph = None
     try:
-        graph = _pool.acquire()
+        graph = pool.acquire()
         from consciousness_sea.learning.checkpoint import CheckpointManager
         manager = CheckpointManager(graph)
-        result = manager.rollback(checkpoint_id=checkpoint_id, mode=mode, edges=edges)
+        result = manager.rollback(checkpoint_id=req.checkpoint_id, mode=req.mode, edges=req.edges)
         return {
             "status": "success" if result.success else "failed",
             "mode": result.mode,
@@ -916,18 +979,22 @@ async def rollback(checkpoint_id: str, mode: str = "full", edges: list[dict] | N
             "error": result.error,
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        log.exception("回滚操作异常: %s", e)
+        raise HTTPException(
+            status_code=500,
+            detail={"error": "internal_error", "message": "服务器内部错误"},
+        )
     finally:
         if graph is not None:
-            _pool.release(graph)
+            pool.release(graph)
 
 
 @app.get("/api/v1/cold-start/{user_label}")
-async def get_cold_start_status(user_label: str):
+def get_cold_start_status(user_label: str, pool: ConnectionPool = Depends(get_pool), _auth: None = Depends(verify_api_key)):
     """查询冷启动状态"""
     graph = None
     try:
-        graph = _pool.acquire()
+        graph = pool.acquire()
         from consciousness_sea.learning.cold_start import ColdStartManager
         from consciousness_sea.infrastructure.config import COLD_START_QUERIES
         manager = ColdStartManager(graph)
@@ -940,10 +1007,14 @@ async def get_cold_start_status(user_label: str):
             "cold_start_queries": COLD_START_QUERIES,
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        log.exception("冷启动状态查询异常: %s", e)
+        raise HTTPException(
+            status_code=500,
+            detail={"error": "internal_error", "message": "服务器内部错误"},
+        )
     finally:
         if graph is not None:
-            _pool.release(graph)
+            pool.release(graph)
 
 
 # ═══════════════════════════════════════════════════════════
@@ -952,7 +1023,13 @@ async def get_cold_start_status(user_label: str):
 
 
 @app.get("/api/v1/meta-seeds")
-def list_meta_seeds(category: str | None = None):
+def list_meta_seeds(
+    category: str | None = None,
+    limit: int = Query(100, ge=1, le=1000),
+    offset: int = Query(0, ge=0),
+    pool: ConnectionPool = Depends(get_pool),
+    _auth: None = Depends(verify_api_key),
+):
     """查询所有元种子
 
     Query Parameters:
@@ -964,7 +1041,7 @@ def list_meta_seeds(category: str | None = None):
 
     graph = None
     try:
-        graph = _pool.acquire()
+        graph = pool.acquire()
         from consciousness_sea.metacognition.meta_seed import MetaSeedManager, MetaSeedCategory
         mgr = MetaSeedManager(graph)
 
@@ -975,10 +1052,10 @@ def list_meta_seeds(category: str | None = None):
             except ValueError:
                 raise HTTPException(
                     status_code=422,
-                    detail=f"无效的 category 值: {category}",
+                    detail={"error": "validation_error", "message": f"无效的 category 值: {category}"},
                 )
 
-        seeds = mgr.list_meta_seeds(category=cat_enum)
+        seeds = mgr.list_meta_seeds(category=cat_enum, limit=limit, offset=offset)
         return {
             "meta_seeds": [
                 {
@@ -994,29 +1071,32 @@ def list_meta_seeds(category: str | None = None):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        log.exception("元种子列表查询异常: %s", e)
+        raise HTTPException(
+            status_code=500,
+            detail={"error": "internal_error", "message": "服务器内部错误"},
+        )
     finally:
         if graph is not None:
-            _pool.release(graph)
+            pool.release(graph)
 
 
 @app.get("/api/v1/meta-seeds/{label}")
-def get_meta_seed(label: str):
+def get_meta_seed(label: str, pool: ConnectionPool = Depends(get_pool), _auth: None = Depends(verify_api_key)):
     """查询单个元种子详情"""
     if not META_SEED_ENABLED:
-        raise HTTPException(status_code=404, detail=f"元种子不存在: {label}")
+        raise HTTPException(status_code=404, detail={"error": "not_found", "message": f"元种子不存在: {label}"})
 
     graph = None
     try:
-        graph = _pool.acquire()
+        graph = pool.acquire()
         from consciousness_sea.metacognition.meta_seed import MetaSeedManager
         mgr = MetaSeedManager(graph)
 
         ms = mgr.get_meta_seed(label)
         if ms is None:
-            raise HTTPException(status_code=404, detail=f"元种子不存在: {label}")
+            raise HTTPException(status_code=404, detail={"error": "not_found", "message": f"元种子不存在: {label}"})
 
-        # 查询元业力边
         meta_karma_edges = []
         try:
             rows = graph.conn.execute(
@@ -1039,14 +1119,18 @@ def get_meta_seed(label: str):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        log.exception("元种子详情查询异常: %s", e)
+        raise HTTPException(
+            status_code=500,
+            detail={"error": "internal_error", "message": "服务器内部错误"},
+        )
     finally:
         if graph is not None:
-            _pool.release(graph)
+            pool.release(graph)
 
 
 @app.get("/api/v1/guardian/status")
-def guardian_status():
+def guardian_status(_auth: None = Depends(verify_api_key)):
     """查询守护循环运行状态"""
     if not META_SEED_ENABLED or _guardian_loop is None:
         return {
@@ -1073,11 +1157,15 @@ def guardian_status():
             "consecutive_failures": status.consecutive_failures,
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        log.exception("守护循环状态查询异常: %s", e)
+        raise HTTPException(
+            status_code=500,
+            detail={"error": "internal_error", "message": "服务器内部错误"},
+        )
 
 
 @app.post("/api/v1/guardian/trigger")
-def trigger_guardian():
+def trigger_guardian(_auth: None = Depends(verify_api_key)):
     """手动触发一次守护循环"""
     if not META_SEED_ENABLED or _guardian_loop is None:
         return {
@@ -1090,7 +1178,7 @@ def trigger_guardian():
     if _guardian_loop.is_executing:
         raise HTTPException(
             status_code=409,
-            detail="守护循环正在执行中",
+            detail={"error": "conflict", "message": "守护循环正在执行中"},
         )
 
     try:
@@ -1103,7 +1191,11 @@ def trigger_guardian():
             "error": result.error,
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        log.exception("守护循环触发异常: %s", e)
+        raise HTTPException(
+            status_code=500,
+            detail={"error": "internal_error", "message": "服务器内部错误"},
+        )
 
 
 @app.get("/status")
@@ -1133,13 +1225,13 @@ def status_endpoint(
         return _status_to_dict(status)
 
     except sqlite3.OperationalError as e:
-        log.error(f"/status 数据库操作失败: {e}")
+        log.error("/status 数据库操作失败: %s", e)
         raise HTTPException(
             status_code=503,
             detail={"error": "service_unavailable", "message": "数据库暂时不可用"},
         )
     except Exception as e:
-        log.exception(f"/status 查询异常: {e}")
+        log.exception("/status 查询异常: %s", e)
         raise HTTPException(
             status_code=503,
             detail={"error": "service_unavailable", "message": "监控服务暂时不可用"},
@@ -1280,6 +1372,8 @@ def _record_param_stats(
 def list_cognitive_goals(
     status: str | None = None,
     goal_type: str | None = None,
+    pool: ConnectionPool = Depends(get_pool),
+    _auth: None = Depends(verify_api_key),
 ):
     """查询所有认知目标
 
@@ -1292,7 +1386,7 @@ def list_cognitive_goals(
 
     graph = None
     try:
-        graph = _pool.acquire()
+        graph = pool.acquire()
         from consciousness_sea.metacognition.cognitive_goal import CognitiveGoalManager, GoalStatus, GoalType as GT
 
         mgr = CognitiveGoalManager(graph)
@@ -1304,7 +1398,7 @@ def list_cognitive_goals(
             except ValueError:
                 raise HTTPException(
                     status_code=422,
-                    detail=f"无效的 status 值: {status}",
+                    detail={"error": "validation_error", "message": f"无效的 status 值: {status}"},
                 )
 
         type_enum = None
@@ -1314,7 +1408,7 @@ def list_cognitive_goals(
             except ValueError:
                 raise HTTPException(
                     status_code=422,
-                    detail=f"无效的 goal_type 值: {goal_type}",
+                    detail={"error": "validation_error", "message": f"无效的 goal_type 值: {goal_type}"},
                 )
 
         goals = mgr.list_goals(status=status_enum, goal_type=type_enum)
@@ -1335,14 +1429,18 @@ def list_cognitive_goals(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        log.exception("认知目标列表查询异常: %s", e)
+        raise HTTPException(
+            status_code=500,
+            detail={"error": "internal_error", "message": "服务器内部错误"},
+        )
     finally:
         if graph is not None:
-            _pool.release(graph)
+            pool.release(graph)
 
 
 @app.get("/api/v1/cognitive-goals/stats")
-def cognitive_goals_stats():
+def cognitive_goals_stats(pool: ConnectionPool = Depends(get_pool), _auth: None = Depends(verify_api_key)):
     """查询认知目标统计信息"""
     if not COGNITIVE_GOAL_ENABLED:
         return {
@@ -1354,32 +1452,36 @@ def cognitive_goals_stats():
 
     graph = None
     try:
-        graph = _pool.acquire()
+        graph = pool.acquire()
         from consciousness_sea.metacognition.cognitive_goal import CognitiveGoalManager
         mgr = CognitiveGoalManager(graph)
         return mgr.get_goal_stats()
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        log.exception("认知目标统计查询异常: %s", e)
+        raise HTTPException(
+            status_code=500,
+            detail={"error": "internal_error", "message": "服务器内部错误"},
+        )
     finally:
         if graph is not None:
-            _pool.release(graph)
+            pool.release(graph)
 
 
 @app.get("/api/v1/cognitive-goals/{goal_id}")
-def get_cognitive_goal(goal_id: str):
+def get_cognitive_goal(goal_id: str, pool: ConnectionPool = Depends(get_pool), _auth: None = Depends(verify_api_key)):
     """查询单个认知目标详情"""
     if not COGNITIVE_GOAL_ENABLED:
-        raise HTTPException(status_code=404, detail=f"认知目标不存在: {goal_id}")
+        raise HTTPException(status_code=404, detail={"error": "not_found", "message": f"认知目标不存在: {goal_id}"})
 
     graph = None
     try:
-        graph = _pool.acquire()
+        graph = pool.acquire()
         from consciousness_sea.metacognition.cognitive_goal import CognitiveGoalManager
         mgr = CognitiveGoalManager(graph)
 
         goal = mgr.get_goal(goal_id)
         if goal is None:
-            raise HTTPException(status_code=404, detail=f"认知目标不存在: {goal_id}")
+            raise HTTPException(status_code=404, detail={"error": "not_found", "message": f"认知目标不存在: {goal_id}"})
 
         return {
             "goal_id": goal.goal_id,
@@ -1399,14 +1501,18 @@ def get_cognitive_goal(goal_id: str):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        log.exception("认知目标详情查询异常: %s", e)
+        raise HTTPException(
+            status_code=500,
+            detail={"error": "internal_error", "message": "服务器内部错误"},
+        )
     finally:
         if graph is not None:
-            _pool.release(graph)
+            pool.release(graph)
 
 
 @app.post("/api/v1/cognitive-goals")
-def create_cognitive_goal(body: CreateCognitiveGoalRequest):
+def create_cognitive_goal(body: CreateCognitiveGoalRequest, pool: ConnectionPool = Depends(get_pool), _auth: None = Depends(verify_api_key)):
     """手动创建认知目标
 
     Request Body:
@@ -1417,7 +1523,7 @@ def create_cognitive_goal(body: CreateCognitiveGoalRequest):
         }
     """
     if not COGNITIVE_GOAL_ENABLED:
-        raise HTTPException(status_code=503, detail="认知目标功能已禁用")
+        raise HTTPException(status_code=503, detail={"error": "service_unavailable", "message": "认知目标功能已禁用"})
 
     from consciousness_sea.metacognition.cognitive_goal import GoalType
 
@@ -1430,13 +1536,12 @@ def create_cognitive_goal(body: CreateCognitiveGoalRequest):
     except ValueError:
         raise HTTPException(
             status_code=400,
-            detail=f"无效的 goal_type 值: {goal_type_str}，"
-                   f"合法值: {[t.value for t in GoalType]}",
+            detail={"error": "validation_error", "message": f"无效的 goal_type 值: {goal_type_str}，合法值: {[t.value for t in GoalType]}"},
         )
 
     graph = None
     try:
-        graph = _pool.acquire()
+        graph = pool.acquire()
         from consciousness_sea.metacognition.cognitive_goal import CognitiveGoalManager
         mgr = CognitiveGoalManager(graph)
 
@@ -1447,7 +1552,7 @@ def create_cognitive_goal(body: CreateCognitiveGoalRequest):
         )
 
         if not success:
-            raise HTTPException(status_code=409, detail="目标创建失败（可能池已满）")
+            raise HTTPException(status_code=409, detail={"error": "conflict", "message": "目标创建失败（可能池已满）"})
 
         # 查找刚创建的目标
         goals = mgr.list_goals()
@@ -1459,14 +1564,18 @@ def create_cognitive_goal(body: CreateCognitiveGoalRequest):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        log.exception("认知目标创建异常: %s", e)
+        raise HTTPException(
+            status_code=500,
+            detail={"error": "internal_error", "message": "服务器内部错误"},
+        )
     finally:
         if graph is not None:
-            _pool.release(graph)
+            pool.release(graph)
 
 
 @app.get("/api/v1/curiosity/status")
-def curiosity_status():
+def curiosity_status(_auth: None = Depends(verify_api_key)):
     """查询好奇心引擎运行状态"""
     if not CURIOSITY_ENGINE_ENABLED or _curiosity_engine is None:
         return {
@@ -1489,39 +1598,40 @@ def curiosity_status():
             "is_exploring": status.is_exploring,
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        log.exception("好奇心引擎状态查询异常: %s", e)
+        raise HTTPException(
+            status_code=500,
+            detail={"error": "internal_error", "message": "服务器内部错误"},
+        )
 
 
 @app.post("/api/v1/curiosity/explore/{goal_id}")
-def trigger_curiosity_explore(goal_id: str):
+def trigger_curiosity_explore(goal_id: str, pool: ConnectionPool = Depends(get_pool), _auth: None = Depends(verify_api_key)):
     """手动触发好奇心引擎对指定目标执行探索"""
     if not CURIOSITY_ENGINE_ENABLED or _curiosity_engine is None:
-        raise HTTPException(status_code=503, detail="好奇心引擎未启用")
+        raise HTTPException(status_code=503, detail={"error": "service_unavailable", "message": "好奇心引擎未启用"})
 
-    # 检查是否正在探索
     try:
         status = _curiosity_engine.get_status()
         if status.is_exploring:
-            raise HTTPException(status_code=409, detail="好奇心引擎正在执行探索")
+            raise HTTPException(status_code=409, detail={"error": "conflict", "message": "好奇心引擎正在执行探索"})
     except HTTPException:
         raise
     except Exception:
         pass
 
-    # 获取目标：优先使用 _guardian_graph（与 _curiosity_engine 同一连接），
-    # 否则回退到 _pool.acquire()
     graph_to_release = None
     try:
         if _guardian_graph is not None:
             goal_mgr = CognitiveGoalManager(_guardian_graph)
         else:
-            graph_to_release = _pool.acquire()
+            graph_to_release = pool.acquire()
             from consciousness_sea.metacognition.cognitive_goal import CognitiveGoalManager
             goal_mgr = CognitiveGoalManager(graph_to_release)
 
         goal = goal_mgr.get_goal(goal_id)
         if goal is None:
-            raise HTTPException(status_code=404, detail=f"认知目标不存在: {goal_id}")
+            raise HTTPException(status_code=404, detail={"error": "not_found", "message": f"认知目标不存在: {goal_id}"})
 
         # 执行探索
         result = _curiosity_engine.explore(goal)
@@ -1537,10 +1647,14 @@ def trigger_curiosity_explore(goal_id: str):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        log.exception("好奇心探索异常: %s", e)
+        raise HTTPException(
+            status_code=500,
+            detail={"error": "internal_error", "message": "服务器内部错误"},
+        )
     finally:
         if graph_to_release is not None:
-            _pool.release(graph_to_release)
+            pool.release(graph_to_release)
 
 
 # ═══════════════════════════════════════════════════════════
@@ -1549,7 +1663,7 @@ def trigger_curiosity_explore(goal_id: str):
 
 
 @app.get("/api/v1/perception/status")
-def perception_status():
+def perception_status(_auth: None = Depends(verify_api_key)):
     """查询感知系统整体状态"""
     if not PERCEPTION_ENABLED or _perception_manager is None:
         return {
@@ -1580,11 +1694,15 @@ def perception_status():
             "last_multimodal_alignment": status.last_multimodal_alignment,
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        log.exception("感知状态查询异常: %s", e)
+        raise HTTPException(
+            status_code=500,
+            detail={"error": "internal_error", "message": "服务器内部错误"},
+        )
 
 
 @app.get("/api/v1/perception/seeds")
-def perception_seeds(channel: str | None = None):
+def perception_seeds(channel: str | None = None, _auth: None = Depends(verify_api_key)):
     """查询所有感知元种子
 
     Query Parameters:
@@ -1598,35 +1716,43 @@ def perception_seeds(channel: str | None = None):
     if channel is not None and channel not in valid_channels:
         raise HTTPException(
             status_code=422,
-            detail=f"无效的 channel 值: {channel}，合法值: {sorted(valid_channels)}",
+            detail={"error": "validation_error", "message": f"无效的 channel 值: {channel}，合法值: {sorted(valid_channels)}"},
         )
 
     try:
         seeds = _perception_manager.list_perceptual_seeds(channel=channel)
         return {"seeds": seeds}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        log.exception("感知种子查询异常: %s", e)
+        raise HTTPException(
+            status_code=500,
+            detail={"error": "internal_error", "message": "服务器内部错误"},
+        )
 
 
 @app.get("/api/v1/perception/seeds/{label}")
-def perception_seed_detail(label: str):
+def perception_seed_detail(label: str, _auth: None = Depends(verify_api_key)):
     """查询单个感知元种子详情"""
     if not PERCEPTION_ENABLED or _perception_manager is None:
-        raise HTTPException(status_code=404, detail=f"感知元种子不存在: {label}")
+        raise HTTPException(status_code=404, detail={"error": "not_found", "message": f"感知元种子不存在: {label}"})
 
     try:
         seed = _perception_manager.get_perceptual_seed(label)
         if seed is None:
-            raise HTTPException(status_code=404, detail=f"感知元种子不存在: {label}")
+            raise HTTPException(status_code=404, detail={"error": "not_found", "message": f"感知元种子不存在: {label}"})
         return seed
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        log.exception("感知种子详情查询异常: %s", e)
+        raise HTTPException(
+            status_code=500,
+            detail={"error": "internal_error", "message": "服务器内部错误"},
+        )
 
 
 @app.get("/api/v1/perception/bindings")
-def perception_bindings(channel: str | None = None):
+def perception_bindings(channel: str | None = None, _auth: None = Depends(verify_api_key)):
     """查询所有 Hebbian 绑定边
 
     Query Parameters:
@@ -1640,18 +1766,22 @@ def perception_bindings(channel: str | None = None):
     if channel is not None and channel not in valid_channels:
         raise HTTPException(
             status_code=422,
-            detail=f"无效的 channel 值: {channel}，合法值: {sorted(valid_channels)}",
+            detail={"error": "validation_error", "message": f"无效的 channel 值: {channel}，合法值: {sorted(valid_channels)}"},
         )
 
     try:
         bindings = _perception_manager.list_hebbian_bindings(channel=channel)
         return {"bindings": bindings}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        log.exception("Hebbian绑定查询异常: %s", e)
+        raise HTTPException(
+            status_code=500,
+            detail={"error": "internal_error", "message": "服务器内部错误"},
+        )
 
 
 @app.get("/api/v1/perception/events")
-def perception_events(limit: int = Query(20, ge=1, le=1000)):
+def perception_events(limit: int = Query(20, ge=1, le=1000), _auth: None = Depends(verify_api_key)):
     """查询最近的感知激活事件"""
     if not PERCEPTION_ENABLED or _perception_manager is None:
         return {"events": []}
@@ -1660,26 +1790,34 @@ def perception_events(limit: int = Query(20, ge=1, le=1000)):
         events = _perception_manager.list_perception_events(limit=limit)
         return {"events": events}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        log.exception("感知事件查询异常: %s", e)
+        raise HTTPException(
+            status_code=500,
+            detail={"error": "internal_error", "message": "服务器内部错误"},
+        )
 
 
 @app.post("/api/v1/perception/align")
-def perception_align():
+def perception_align(_auth: None = Depends(verify_api_key)):
     """手动触发一次多模态对齐"""
     if not PERCEPTION_ENABLED or _perception_manager is None:
-        raise HTTPException(status_code=503, detail="感知功能已禁用")
+        raise HTTPException(status_code=503, detail={"error": "service_unavailable", "message": "感知功能已禁用"})
 
     try:
         aligner = _perception_manager.multimodal_aligner
         if aligner is not None and aligner.is_running:
-            raise HTTPException(status_code=409, detail="多模态对齐正在运行中")
+            raise HTTPException(status_code=409, detail={"error": "conflict", "message": "多模态对齐正在运行中"})
 
         results = _perception_manager.run_multimodal_alignment()
         return {"results": results, "count": len(results)}
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        log.exception("多模态对齐异常: %s", e)
+        raise HTTPException(
+            status_code=500,
+            detail={"error": "internal_error", "message": "服务器内部错误"},
+        )
 
 
 def main():
